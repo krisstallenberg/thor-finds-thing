@@ -11,3 +11,5 @@ emissor
 cltl.combot
 ollama
 jupyter
+llama-index-core
+llama-index-utils-workflow
