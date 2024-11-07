@@ -13,3 +13,5 @@ ollama
 jupyter
 llama-index-core
 llama-index-utils-workflow
+openai==1.40.0
+python-dotenv
