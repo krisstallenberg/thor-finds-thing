@@ -12,7 +12,12 @@ cltl.combot
 ollama
 jupyter
 llama-index-core
+llama-index-llms-ollama
+llama-index-llms-openai
 llama-index-utils-workflow
 openai==1.40.0
 python-dotenv
 ai2thor
+chainlit
+llama-index-multi-modal-llms-openai
+matplotlib
