@@ -6,11 +6,13 @@ Group project for the **Communicative Robots** VU master's course taught from th
 
 ### Prerequisites
 
-Before you execute the `make` command, [install Ollama](https://ollama.com/download) and install the **Llama3.2** model:
+For this project, you need Ollama to locally run the LLama3.2 model:
 
-```bash
-ollama pull llama3.2
-```
+1. [install Ollama](https://ollama.com/download) 
+2. Install the **Llama3.2** model:
+    ```bash
+    ollama pull llama3.2
+    ```
 
 ### Virtual environment
 
