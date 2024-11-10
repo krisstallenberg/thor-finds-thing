@@ -14,7 +14,7 @@ For this project, you need Ollama to locally run the LLama3.2 model:
     ollama pull llama3.2
     ```
 
-### Virtual environment
+### Setting up
 
 1. To create a virtual environment using Conda and install all dependencies, run:
     ```
