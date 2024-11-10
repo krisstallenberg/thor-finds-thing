@@ -2,3 +2,8 @@
 myenv/
 .env
 lib/
+.chainlit/
+.files/
+__pycache__/
+.files/
+log/
