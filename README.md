@@ -24,6 +24,11 @@ make
 
 > To avoid naming conflicts in your environment, we create not a global Conda environment, but a local one, in the `./myenv` directory.
 
+Next, add your OpenAI API key to the `.env` file:
+```
+OPENAI_API_KEY=sk-proj...
+```
+
 ## Usage
 
 The main application is a [Chainlit](https://docs.chainlit.io/get-started/overview) app.
