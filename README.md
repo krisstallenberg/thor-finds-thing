@@ -37,6 +37,8 @@ To run this app from the virtual environment, run:
 make run
 ```
 
+This starts a web server on `http://localhost:8000` where you can interact with the AI2Thor instance.
+
 ### Development
 
 To start an interactive Python notebook from the virtual environment, run:
