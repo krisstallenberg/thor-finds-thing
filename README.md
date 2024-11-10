@@ -16,18 +16,16 @@ For this project, you need Ollama to locally run the LLama3.2 model:
 
 ### Virtual environment
 
-To create a virtual environment using Conda and install all dependencies, run:
+1. To create a virtual environment using Conda and install all dependencies, run:
+    ```
+    make
+    ```
+    > To avoid naming conflicts in your environment, we create not a global Conda environment, but a local one, in the `./myenv` directory.
 
-```
-make
-```
-
-> To avoid naming conflicts in your environment, we create not a global Conda environment, but a local one, in the `./myenv` directory.
-
-Next, add your OpenAI API key to the `.env` file:
-```
-OPENAI_API_KEY=sk-proj...
-```
+2. Next, add your OpenAI API key to the `.env` file:
+    ```
+    OPENAI_API_KEY=sk-proj...
+    ```
 
 ## Usage
 
