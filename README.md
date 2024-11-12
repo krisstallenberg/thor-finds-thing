@@ -8,7 +8,7 @@ Group project for the **Communicative Robots** VU master's course taught from th
 
 For this project, you need Ollama to locally run the LLama3.2 model:
 
-1. [install Ollama](https://ollama.com/download) 
+1. [install Ollama](https://ollama.com/download).
 2. Install the **Llama3.2** model:
     ```bash
     ollama pull llama3.2

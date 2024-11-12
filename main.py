@@ -52,16 +52,13 @@ class ThorFindsObject(Workflow):
         await cl.Message(content=self.thor.describe_scene_from_image()).send()
         
         if random.randint(0, 1) == 0:
-            print("Initial description is complete.")
             return InitialDescriptionComplete(payload="Initial description is complete.")
         else:
-            print("Initial description is incomplete.")
             return InitialDescriptionIncomplete(payload="Initial description is incomplete.")
 
     @cl.step(type="llm", name="step to clarify the initial description")
     @step
     async def clarify_initial_description(self, ev: InitialDescriptionIncomplete) -> InitialDescriptionComplete:
-        print("Initial description clarified.")
         return InitialDescriptionComplete(payload="Description clarified.")
 
     @cl.step(type="llm", name="step to find a room of the correct type")
@@ -76,20 +73,16 @@ class ThorFindsObject(Workflow):
         await cl.Message(content="""Before we move on, let me tell you what I see. \n\nI see {}""".format(current_description)).send()
         
         if random.randint(0, 1) == 0:
-            print("Teleported to correct room type.")
             return RoomCorrect(payload="Correct room is found.")
         else:
-            print("Teleported to incorrect room type.")
             return RoomIncorrect(payload="Correct room is not found.")
 
     @cl.step(type="llm", name="step to find the object in the room")
     @step 
     async def find_object_in_room(self, ev: RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
         if random.randint(0, 10) < 4:
-            print("Object may be in this room.")
             return ObjectInRoom(payload="Object may be in this room.")
         else:
-            print("Object is not in this room.")
             return ObjectNotInRoom(payload="Object is not in this room.")
     
     @cl.step(type="llm" , name="step to suggest an object")
@@ -113,7 +106,6 @@ class ThorFindsObject(Workflow):
             return StopEvent(result="We found the object!")  # End the workflow
         else:
             if random.randint(0, 1) == 0:
-                print("Wrong object suggested.")
                 return WrongObjectSuggested(payload="Couldn't find object in this room.")
             else:
                 return ObjectNotInRoom(payload="Object is not in this room.")
@@ -137,9 +129,8 @@ async def on_chat_start():
     
     # Introductory messages to be streamed
     intro_messages = [
-        "Hey, we are going to try to find an object together, only through text communication. You will be asked to describe an object in a scene, and I will try to find the object.",
-        "In order to do this, I will need you to describe the scene in detail. Please write in complete sentences, from the first person perspective.\n\nLet's get started...",
-        "Please tell me what you saw."
+        "Hey, there!\n\n We are going to try to find an object together, only through text communication.",
+        "To get started, please describe what you saw in detail. Describe the object, its surroundings and what type of room it appeared to be in. Please write in complete sentences."
     ]
     
     for message in intro_messages:
@@ -150,7 +141,7 @@ async def on_chat_start():
         for letter in message:
             response_message.content += letter
             await response_message.update()  
-            await asyncio.sleep(0.025) 
+            await asyncio.sleep(0.01) 
         await asyncio.sleep(1) 
 
 @cl.on_message
@@ -173,7 +164,7 @@ async def on_message(message: cl.Message):
     for letter in result:
         response_message.content += letter
         await response_message.update()  # Update the message with new content
-        await asyncio.sleep(0.025)  # Adjust delay as needed for streaming effect
+        await asyncio.sleep(0.01)  # Adjust delay as needed for streaming effect
 
 @cl.on_chat_end
 def end():

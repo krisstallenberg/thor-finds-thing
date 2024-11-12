@@ -4,8 +4,12 @@ from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
 from openai import OpenAI
 import random
+import base64
 import time
-from ThorUtils import encode_image
+from ThorUtils import ( 
+                       encode_image, 
+                       get_distance 
+                       )
 
 class AI2ThorClient: 
     """
@@ -48,13 +52,7 @@ class AI2ThorClient:
         str
             A string describing the current scene.
         """
-        
-        image = self._get_image()
-        
-        img_path  = f"log/img/{str(time.time())}.jpg"
-        image.save(img_path)
-        
-        encoded_image = encode_image(img_path)
+        encoded_image = encode_image(self._get_image())
         
         response = self._llm_openai_multimodal.chat.completions.create(
         model="gpt-4o",
@@ -64,7 +62,7 @@ class AI2ThorClient:
                 "content": [
                     {
                         "type": "text",
-                        "text": "Imagine this is your point-of-view. Describe what you see in this virtual environment. Write from the first perspective so start your message with 'I'. First, describe the objects, their colors, and their positions. Don't introduce your description. Start describing directly e.g. 'I currently see a <object> on a <surface> ...'. Be objective in your description! Finally describe the room type: it's either a living room, kitchen, bedroom, or bedroom. It can't be anything else. If you can't infer the room type, just say so. ",
+                        "text": "Imagine this is your point-of-view. Describe what you see in this virtual environment. Write from the first perspective so start your message with 'I'. First, describe the objects, their colors, and their positions. Don't introduce your description. Start describing directly e.g. 'I currently see a <object> on a <surface> ...'. Be objective in your description! Finally describe the room type: it's either a living room, kitchen, bedroom, or bedroom. It can't be anything else. If you can't infer the room type, just say so.",
                         },
                     {
                         "type": "image_url",
@@ -78,11 +76,8 @@ class AI2ThorClient:
         )
 
         return response.choices[0].message.content        
-
-    def _get_image(self):
-        return Image.fromarray(self._controller.last_event.frame)
    
-    def _infer_room_type(self):
+    def infer_room_type(self, description: str) -> str:
         """
         Infers the room type from the current scene.
         
@@ -96,6 +91,10 @@ class AI2ThorClient:
         Returns a string representing the likely room type.
         """
         pass 
+    
+    
+    def _get_image(self):
+        return Image.fromarray(self._controller.last_event.frame)
     
     def _step(self, direction: str = "MoveAhead", magnitude: float = None) -> None:
         """
