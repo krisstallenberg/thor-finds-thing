@@ -6,9 +6,10 @@ from openai import OpenAI
 import random
 import base64
 import time
-from ThorUtils import ( 
-                       encode_image, 
-                       get_distance 
+from thor_utils import ( 
+                        encode_image, 
+                        get_distance,
+                        closest_objects
                        )
 
 # Constants
