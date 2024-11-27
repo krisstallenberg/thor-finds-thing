@@ -11,6 +11,10 @@ from ThorUtils import (
                        get_distance 
                        )
 
+# Constants
+VISIBILITY_DISTANCE = 1.5
+SCENE = "FloorPlan212"
+
 class AI2ThorClient: 
     """
     An AI2Thor instance with methods wrapping its controller.
@@ -19,11 +23,10 @@ class AI2ThorClient:
     def __init__(self):
         self._controller = Controller(
             agentMode="default",
-            visibilityDistance=1.5,
-            scene="FloorPlan212",
+            visibilityDistance=VISIBILITY_DISTANCE,
+            scene=SCENE,
 
             # step sizes
-            
             gridSize=0.25,
             snapToGrid=True,
             rotateStepDegrees=90,
@@ -129,6 +132,8 @@ class AI2ThorClient:
         ----------
         direction : str
             Direction to turn in. Can be "RotateLeft" or "RotateRight".
+        degrees : float, optional
+            Degrees to turn. Default is None.
         
         Returns None
         """
@@ -180,6 +185,29 @@ class AI2ThorClient:
         )
         
         self._metadata.append(self._controller.last_event.metadata)
+    
+    def _find_objects_in_sight(self, object_type: str) -> list:
+        """
+        Finds objects in sight.
+        
+        Parameters
+        ----------
+        object_type : str
+            The type of object to find.
+        
+        Returns
+        -------
+        list
+            A list of objects in sight.
+        """
+        # Get objects in sight
+        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visibility"] == True]
+        
+        # Optionally filter by object type
+        if object_type:
+            objects_in_sight = [obj for obj in objects_in_sight if obj["objectType"] == object_type]
+        
+        return objects_in_sight
     
     def _done(self) -> None:
         """

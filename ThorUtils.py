@@ -31,7 +31,7 @@ def get_distance(coord1, coord2):
                         + (coord2['z'] - coord1['z'])**2)
         return distance
     
-def closest_to_object(objectId, objects, num: int = 1):
+def closest_objects(objectId, objects, num: int = 1):
     """
     Find the closest object(s) to the given object.
     
@@ -50,3 +50,4 @@ def closest_to_object(objectId, objects, num: int = 1):
         A list of the closest object(s) to the given object.
     """
     pass
+

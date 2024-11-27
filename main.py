@@ -158,13 +158,13 @@ async def on_message(message: cl.Message):
     
     # Initialize the response message with an empty content
     response_message = cl.Message(content="")
-    await response_message.send()  # Send an initial empty message
+    await response_message.send()
     
-    # Stream the result letter by letter
+    # Stream the result letter by letter with delays in between
     for letter in result:
         response_message.content += letter
-        await response_message.update()  # Update the message with new content
-        await asyncio.sleep(0.01)  # Adjust delay as needed for streaming effect
+        await response_message.update() 
+        await asyncio.sleep(0.01)
 
 @cl.on_chat_end
 def end():
