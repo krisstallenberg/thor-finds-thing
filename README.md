@@ -37,7 +37,7 @@ To run this app from the virtual environment, run:
 make run
 ```
 
-This starts a web server on `http://localhost:8000` where you can interact with the AI2Thor instance.
+This starts a web server that hosts the chat interface on `http://localhost:8000` where you can interact with the AI2Thor system to find the object.
 
 ### Development
 
