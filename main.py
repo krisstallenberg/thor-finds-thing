@@ -50,6 +50,7 @@ class ThorFindsObject(Workflow):
     async def evaluate_initial_description(self, ev: StartEvent) -> InitialDescriptionComplete | InitialDescriptionIncomplete:
         await cl.Message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a scene: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief."))).send()
         await cl.Message(content=self.thor.describe_scene_from_image()).send()
+        await cl.Message(content=self.thor.describe_scene_from_image_structured()).send()
         
         if random.randint(0, 1) == 0:
             return InitialDescriptionComplete(payload="Initial description is complete.")
@@ -63,7 +64,7 @@ class ThorFindsObject(Workflow):
 
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
-    async def random_teleport(self, ev: InitialDescriptionComplete | RoomIncorrect | ObjectNotInRoom) -> RoomCorrect | RoomIncorrect:
+    async def find_correct_room_type(self, ev: InitialDescriptionComplete | RoomIncorrect | ObjectNotInRoom) -> RoomCorrect | RoomIncorrect:
         current_description = """a living room setup viewed from behind a dark-colored couch. The room has light-colored walls and a floor that seems to be a muted, earthy tone. The main items in the room include:
 - A large, dark-colored sofa in the foreground facing a TV.
 - A television placed on a small white TV stand, positioned along the far wall.
