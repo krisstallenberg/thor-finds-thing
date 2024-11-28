@@ -140,6 +140,32 @@ class AI2ThorClient:
         pass 
     
     
+    def parse_unstructured_description(self, description: str):
+        """
+        Parse an unstructured description into structured data.
+    
+        Parameters
+        ----------
+        description : str
+            The unstructured description to parse.
+            
+        Returns
+        -------
+        PydanticModel
+            An instance of the given Pydantic model populated with the parsed data.
+        """
+    
+        response = self._llm_openai_multimodal.beta.chat.completions.parse(
+            model="gpt-4o-2024-08-06",
+            messages=[
+                {"role": "system", "content": "Your task is to turn a user's description of an object, its context and the room type into a structured response. When information is missing from the user's description, do not make up parts of the description, go ONLY off of the user's description."},
+                {"role": "user", "content": description}
+            ],
+            response_format=InitialDescription,
+        )
+        
+        self.structured_initial_description = response.choices[0].message.parsed
+    
     def _get_image(self):
         return Image.fromarray(self._controller.last_event.frame)
     
