@@ -9,6 +9,7 @@ from llama_index.core.workflow import (
 )
 import random
 from AI2ThorClient import AI2ThorClient
+from descriptions import InitialDescription, ViewDescription
 from openai import OpenAI
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
@@ -48,6 +49,9 @@ class ThorFindsObject(Workflow):
     @cl.step(type="llm", name="step to evaluate the initial description")
     @step
     async def evaluate_initial_description(self, ev: StartEvent) -> InitialDescriptionComplete | InitialDescriptionIncomplete:
+        # Store the initial description in the AI2ThorClient instance
+        self.thor.initial_description = ev.initial_description
+        
         # Give user a summary of their initial description.
         await cl.Message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a view: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief."))).send()
         
@@ -57,14 +61,25 @@ class ThorFindsObject(Workflow):
         # Stream the structured description.
         await cl.Message(content=self.thor.describe_view_from_image()).send()
         
-        if random.randint(0, 1) == 0:
-            return InitialDescriptionComplete(payload="Initial description is complete.")
+        # Parse the user input and generate a structured description
+        self.thor.parse_unstructured_description(ev.initial_description)
+        
+        # Evaluate the initial description
+        if not self.thor.structured_initial_description:
+            return InitialDescriptionIncomplete(payload="There's not initial description given.")
+        if not self.thor.structured_initial_description.target_object:
+            return InitialDescriptionIncomplete(payload="There's no description of a target object.")
+        if not self.thor.structured_initial_description.room_description:
+            return InitialDescriptionIncomplete(payload="There's no description of the room.")
         else:
-            return InitialDescriptionIncomplete(payload="Initial description is incomplete.")
+            return InitialDescriptionComplete(payload="Initial description is incomplete.")
 
     @cl.step(type="llm", name="step to clarify the initial description")
     @step
     async def clarify_initial_description(self, ev: InitialDescriptionIncomplete) -> InitialDescriptionComplete:
+        # Print the payload for the user to know why the initial description is incomplete.
+        await cl.Message(content=ev.payload + " Let's try to gather more information about what you saw").send()
+        
         return InitialDescriptionComplete(payload="Description clarified.")
 
     @cl.step(type="llm", name="step to find a room of the correct type")

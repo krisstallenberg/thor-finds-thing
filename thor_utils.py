@@ -50,4 +50,3 @@ def closest_objects(objectId, objects, num: int = 1):
         A list of the closest object(s) to the given object.
     """
     
-
