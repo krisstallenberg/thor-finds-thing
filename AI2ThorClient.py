@@ -43,7 +43,9 @@ class AI2ThorClient:
             height=512,
             fieldOfView=90
             )
-        self._metadata = []
+        self.metadata = []
+        self.descriptions = []
+        self.unstructured_descriptions = []
         self._llm_ollama = OllamaLlamaIndex(model="llama3.2", request_timeout=120.0)
         self._llm_openai = OpenAILlamaIndex(model="gpt-4o-2024-08-06")
         self._llm_openai_multimodal = OpenAI()
@@ -118,9 +120,7 @@ class AI2ThorClient:
             response_format=ViewDescription,
             )
         
-        structured_description_struct_output = response.choices[0].message.content
-        return structured_description_struct_output
-
+        return response.choices[0].message.parsed
    
     def infer_room_type(self, description: str) -> str:
         """
