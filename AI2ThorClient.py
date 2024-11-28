@@ -51,14 +51,14 @@ class AI2ThorClient:
         self._llm_openai_multimodal = OpenAI()
         
 
-    def describe_scene_from_image(self):
+    def describe_view_from_image(self):
         """
-        Describes the current scene using an image-to-text model.
+        Describes the current view using an image-to-text model.
     
         Returns
         -------
         str
-            A string describing the current scene.
+            A string describing the current view.
         """
         encoded_image = encode_image(self._get_image())
         
@@ -83,17 +83,18 @@ class AI2ThorClient:
             ],
         )
 
+        self.descriptions.append(response.choices[0].message.content)
         return response.choices[0].message.content
     
     
-    def describe_scene_from_image_structured(self):
+    def describe_view_from_image_structured(self):
         """
-        Describes the current scene using an image-to-text model with structure.
+        Describes the current view using an image-to-text model with structure.
         
         Returns:
         -------
         ViewDescription
-            A structured description of the current scene.
+            A structured description of the current view.
         """    
 
         encoded_image = encode_image(self._get_image())
@@ -120,14 +121,15 @@ class AI2ThorClient:
             response_format=ViewDescription,
             )
         
+        self.descriptions.append(response.choices[0].message.parsed)
         return response.choices[0].message.parsed
    
     def infer_room_type(self, description: str) -> str:
         """
-        Infers the room type from the current scene.
+        Infers the room type the agent is in.
         
         Inference is based on:
-        - The image-to-text description of the scene.
+        - The image-to-text description of the view.
         - The objects in the metadata.
         - The AI2Thor object types mapping (https://ai2thor.allenai.org/ithor/documentation/objects/object-types).
         

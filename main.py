@@ -49,15 +49,13 @@ class ThorFindsObject(Workflow):
     @step
     async def evaluate_initial_description(self, ev: StartEvent) -> InitialDescriptionComplete | InitialDescriptionIncomplete:
         # Give user a summary of their initial description.
-        await cl.Message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a scene: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief."))).send()
+        await cl.Message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a view: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief."))).send()
         
-        # Describe the scene from the image, structured and unstructured.
-        self.thor.descriptions.append(self.thor.describe_scene_from_image())
-        self.thor.unstructured_descriptions.append(self.thor.describe_scene_from_image_structured())
+        # Generate a structured description 
+        self.thor.describe_view_from_image_structured()
         
         # Stream the structured description.
-        await cl.Message(content=self.thor.descriptions[-1]).send()
-        await cl.Message(content=type(self.thor.unstructured_descriptions[-1])).send()
+        await cl.Message(content=self.thor.describe_view_from_image()).send()
         
         if random.randint(0, 1) == 0:
             return InitialDescriptionComplete(payload="Initial description is complete.")
