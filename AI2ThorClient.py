@@ -2,9 +2,11 @@ from ai2thor.controller import Controller
 from PIL import Image
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
+from descriptions import InitialDescription, ViewDescription
 from openai import OpenAI
 import random
 import base64
+import json
 import time
 from thor_utils import ( 
                         encode_image, 
@@ -79,7 +81,46 @@ class AI2ThorClient:
             ],
         )
 
-        return response.choices[0].message.content        
+        return response.choices[0].message.content
+    
+    
+    def describe_scene_from_image_structured(self):
+        """
+        Describes the current scene using an image-to-text model with structure.
+        
+        Returns:
+        -------
+        ViewDescription
+            A structured description of the current scene.
+        """    
+
+        encoded_image = encode_image(self._get_image())
+        
+        response = self._llm_openai_multimodal.beta.chat.completions.parse(
+            model="gpt-4o-2024-08-06",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "Imagine this is your point-of-view. Describe what you see in this virtual environment. Write from the first perspective. Describe the objects, their colors, and their positions. Be objective in your description! Describe the room type: it's either a living room, kitchen, bedroom, or bedroom. It can't be anything else.",
+                            },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url":  f"data:image/jpeg;base64,{encoded_image}"
+                                },
+                            },
+                        ],
+                    },
+                ],
+            response_format=ViewDescription,
+            )
+        
+        structured_description_struct_output = response.choices[0].message.content
+        return structured_description_struct_output
+
    
     def infer_room_type(self, description: str) -> str:
         """
