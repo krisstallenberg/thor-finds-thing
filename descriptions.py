@@ -13,7 +13,7 @@ class ContextObjectDescription(ObjectDescription):
     position_relative_to_target_object: Optional[str]
 
 class RoomDescription(BaseModel):
-    room_type: Optional[Literal["Living room", "Kitchen", "Bedroom", "Bathroom"]]
+    possible_room_types: Optional[List[Literal["Living room", "Kitchen", "Bedroom", "Bathroom"]]]
     size: Optional[str]
     additional_information: Optional[List[str]]
 
