@@ -13,8 +13,13 @@ from descriptions import InitialDescription, ViewDescription
 from openai import OpenAI
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
+from leolani_client import LeolaniChatClient, Action
 
+# Constants
 INT_MAX = 2**31 - 1
+EMISSOR_PATH = "./emissor"
+AGENT = "Human"
+HUMAN = "AI2ThorCLient"
 
 class InitialDescriptionComplete(Event):
     payload: str
@@ -44,11 +49,16 @@ class ThorFindsObject(Workflow):
     
     def __init__(self, timeout: int = 10, verbose: bool = False):
         super().__init__(timeout=timeout, verbose=verbose)
+        self.leolaniClient = LeolaniChatClient(emissor_path=EMISSOR_PATH, agent=AGENT, human=HUMAN)
         self.thor = AI2ThorClient()
     
     @cl.step(type="llm", name="step to evaluate the initial description")
     @step
     async def evaluate_initial_description(self, ev: StartEvent) -> InitialDescriptionComplete | InitialDescriptionIncomplete:
+        # Add initial description message to emissor
+        self.leolaniClient._
+        self.leolaniClient._add_utterance(HUMAN, ev.initial_description)
+        
         # Store the initial description in the AI2ThorClient instance
         self.thor.initial_description = ev.initial_description
         
