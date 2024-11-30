@@ -13,8 +13,13 @@ from descriptions import InitialDescription, ViewDescription
 from openai import OpenAI
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
+from leolani_client import LeolaniChatClient, Action
 
+# Constants
 INT_MAX = 2**31 - 1
+EMISSOR_PATH = "./emissor"
+AGENT = "Human"
+HUMAN = "AI2ThorCLient"
 
 class InitialDescriptionComplete(Event):
     payload: str
@@ -44,22 +49,47 @@ class ThorFindsObject(Workflow):
     
     def __init__(self, timeout: int = 10, verbose: bool = False):
         super().__init__(timeout=timeout, verbose=verbose)
-        self.thor = AI2ThorClient()
+        self.leolaniClient = LeolaniChatClient(emissor_path=EMISSOR_PATH, agent=AGENT, human=HUMAN)
+        self.thor = AI2ThorClient(self.leolaniClient)
+        
+    async def send_message(self, content, author=None, elements=None, actions=None, ):
+        """
+        Sends a message using cl.Message.
+
+        Parameters:
+        - content (str): The content of the message (required).
+        - author (str, optional): The author of the message. Defaults to None.
+        - elements (list, optional): A list of elements to attach to the message. Defaults to None.
+        - actions (list, optional): A list of actions to attach to the message. Defaults to None.
+
+        Returns:
+        - The response from cl.Message().send().
+        """
+        
+        message = cl.Message(
+            content=content,
+            author=author,
+            elements=elements,
+            actions=actions
+        )
+        self.leolaniClient._add_utterance(AGENT, content)
+        return await message.send() 
     
     @cl.step(type="llm", name="step to evaluate the initial description")
     @step
     async def evaluate_initial_description(self, ev: StartEvent) -> InitialDescriptionComplete | InitialDescriptionIncomplete:
-        # Store the initial description in the AI2ThorClient instance
+        # Store the initial description in the AI2ThorClient instance and emissor
         self.thor.initial_description = ev.initial_description
+        self.leolaniClient._add_utterance(HUMAN, ev.initial_description)
         
         # Give user a summary of their initial description.
-        await cl.Message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a view: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief."))).send()
+        await self.send_message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a view: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief.")))
         
         # Generate a structured description 
         self.thor.describe_view_from_image_structured()
         
         # Stream the structured description.
-        await cl.Message(content=self.thor.describe_view_from_image()).send()
+        await self.send_message(content=self.thor.describe_view_from_image())
         
         # Parse the user input and generate a structured description
         self.thor.parse_unstructured_description(ev.initial_description)
@@ -124,6 +154,7 @@ class ThorFindsObject(Workflow):
         ).send()
         
         if object_found.get("value") == "yes":
+            self.leolaniClient._save_scenario() 
             return StopEvent(result="We found the object!")  # End the workflow
         else:
             if random.randint(0, 1) == 0:
