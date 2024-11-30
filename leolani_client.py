@@ -22,7 +22,7 @@ class Action(Enum):
     MoveAhead = auto()
     MoveBack = auto()
     MoveLeft = auto()
-    MoverRight = auto()
+    MoveRight = auto()
     RotateRight =auto()
     RotateLeft = auto()
     LookUp =auto()
