@@ -94,15 +94,6 @@ class ThorFindsObject(Workflow):
         # Parse the user input and generate a structured description
         self.thor.parse_unstructured_description(ev.initial_description)
         
-        self.thor._crouch()
-        self.thor._stand()
-        self.thor._rotate("RotateLeft")
-        self.thor._rotate("RotateRight")
-        self.thor._step("MoveAhead")
-        self.thor._step("MoveBack")
-        self.thor._step("MoveLeft")
-        self.thor._step("MoveRight")
-        
         # Evaluate the initial description
         if not self.thor.structured_initial_description:
             return InitialDescriptionIncomplete(payload="There's not initial description given.")
