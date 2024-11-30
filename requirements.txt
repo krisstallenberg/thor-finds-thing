@@ -21,3 +21,5 @@ ai2thor
 chainlit
 llama-index-multi-modal-llms-openai
 matplotlib
+transformers
+torchvision

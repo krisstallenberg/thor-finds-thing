@@ -6,14 +6,22 @@ from descriptions import InitialDescription, ViewDescription
 from openai import OpenAI
 import random
 import base64
+import torchvision
+from transformers import CLIPProcessor, CLIPModel
 import json
 import time
 from thor_utils import ( 
                         encode_image, 
                         get_distance,
-                        closest_objects
-                       )
-
+                        closest_objects,
+                        detect_objects,
+                        classify_objects,
+                        select_objects,
+                        calculate_turn_angle,
+                        expand_box,
+                        calculate_turn_angle,
+                        compute_final_angle
+			)
 # Constants
 VISIBILITY_DISTANCE = 1.5
 SCENE = "FloorPlan212"
@@ -49,7 +57,9 @@ class AI2ThorClient:
         self._llm_ollama = OllamaLlamaIndex(model="llama3.2", request_timeout=120.0)
         self._llm_openai = OpenAILlamaIndex(model="gpt-4o-2024-08-06")
         self._llm_openai_multimodal = OpenAI()
-        
+        self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
+        self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
+        self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
     def describe_view_from_image(self):
         """
@@ -139,7 +149,6 @@ class AI2ThorClient:
         """
         pass 
     
-    
     def parse_unstructured_description(self, description: str):
         """
         Parse an unstructured description into structured data.
@@ -165,7 +174,92 @@ class AI2ThorClient:
         )
         
         self.structured_initial_description = response.choices[0].message.parsed
-    
+
+
+
+
+    def _find_objects_and_angles(self, image, target_objects):
+        """Main workflow to find objects and compute turn angles."""
+
+
+        # Detection
+        detections, image_width, image_height = detect_objects(image)
+
+        # Classification
+        detections_with_labels = classify_objects(detections, image, target_objects)
+
+        detections_df = pd.DataFrame(detections_with_labels)
+
+        # Object Selection
+        obj_type, selected_objects = select_objects(detections_df, target_objects)
+
+        # Angle Calculation
+        turn_angle = compute_final_angle(selected_objects, image_width)
+
+        return turn_angle, detections_df, selected_objects
+
+    def find_and_go_to_object(self, targets):
+        """
+        Rotate to locate the target object, then move toward it.
+        If the target is not found after 4 rotations, teleport to a random location.
+        Args:
+            target (str): Name of the target object.
+            described (list): List of described objects to assist in finding the target.
+        Returns:
+            bool: True if the target object is in sight.
+            string: Type of object in visible distance.
+        """
+        turn_angle = None  
+        count_of_turns = 0  
+        target = targets['target_object']['name']
+        context = []
+        for item in targets['object_in_context']:
+            context.append(item['name'])
+        while turn_angle is None:
+            image = self._get_image()  # Update the image after each rotation
+
+
+            # Define target and described objects
+            target_objects = {'target': target, 'context': context}
+
+            # Run the workflow to find objects and calculate turn angles
+            turn_angle, detections_df, objects_selected = find_objects_and_angles(
+                image_path=image,
+                target_objects=target_objects
+            )
+            self.rotate(direction='left')  # Rotate to search for objects
+            count_of_turns += 1
+            if count_of_turns == 4:  # If the object is not found after 4 rotations
+                self._teleport(to_random=True)
+                print("Target not found after 4 rotations. Teleporting...")
+                return False  # Target not found after teleport
+
+        # Rotate to align with the object
+        if turn_angle > 0:
+            self._rotate(direction='right', degrees=abs(turn_angle))
+        else:
+            self._rotate(direction='left', degrees=abs(turn_angle))
+
+        objects=[]
+        if type(objects_selected)==dict:
+            objects.append(objects_selected['label'])
+        else:
+
+            for item in objects_selected:
+                objects.append(item['label'])
+        # approach the target object
+        while True:
+            visible_objects = self._find_objects_in_sight(object_type=[objects[0]])
+            if target in visible_objects:  
+                if target in objects[0]:
+                    return True, 'target'    # Target object is in sight
+                else:
+                    return True, 'context'
+            if not self._step():
+                print("Step failed")
+                return False
+                               # This part needs more work, if it cant step is gets stuck
+
     def _get_image(self):
         return Image.fromarray(self._controller.last_event.frame)
     
