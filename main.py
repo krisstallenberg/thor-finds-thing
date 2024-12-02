@@ -148,9 +148,6 @@ class ThorFindsObject(Workflow):
                 "relates_to": question.relates_to
             })
         
-        # For testing purposes, remove later.    
-        await self.send_message(content=str(clarifying_questions_answers))
-            
         # Populate the initial description using answers to the clarifying questions.
         clarified_structured_description = populate_initial_description(structured_description=ev.structured_description,
                                      openai_client=self.thor._llm_openai_multimodal,
@@ -161,7 +158,12 @@ class ThorFindsObject(Workflow):
         issues = evaluate_initial_description(clarified_structured_description)
 
         if not issues:
+            self.thor.clarified_structured_description = clarified_structured_description
             await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
+            
+            # For testing purposes
+            await self.send_message(content=str(clarified_structured_description))
+            
             return InitialDescriptionComplete(payload="Description clarified.")    
         else:
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
