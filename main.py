@@ -7,9 +7,11 @@ from llama_index.core.workflow import (
     Event,
     Context
 )
+import json
 import random
 from AI2ThorClient import AI2ThorClient
 from descriptions import InitialDescription, ViewDescription
+from workflow_utils import evaluate_initial_description, generate_questions, populate_initial_description
 from openai import OpenAI
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
@@ -22,10 +24,11 @@ AGENT = "Human"
 HUMAN = "AI2ThorCLient"
 
 class InitialDescriptionComplete(Event):
-    payload: str
+    pass
 
 class InitialDescriptionIncomplete(Event):
-    payload: str
+    issues_with_description: list
+    structured_description: InitialDescription
 
 class ObjectFound(Event):
     payload: str
@@ -49,18 +52,22 @@ class ThorFindsObject(Workflow):
     
     def __init__(self, timeout: int = 10, verbose: bool = False):
         super().__init__(timeout=timeout, verbose=verbose)
+        chat_mode = cl.user_session.get("chat_profile")
         self.leolaniClient = LeolaniChatClient(emissor_path=EMISSOR_PATH, agent=AGENT, human=HUMAN)
-        self.thor = AI2ThorClient(self.leolaniClient)
+        self.thor = AI2ThorClient(self.leolaniClient, chat_mode)
         
-    async def send_message(self, content, author=None, elements=None, actions=None, ):
+    async def send_message(self, content, author=None, elements=None, actions=None):
         """
-        Sends a message using cl.Message.
+        Sends a message using cl.Message. 
+        Logs the message in emissor.
 
         Parameters:
         - content (str): The content of the message (required).
         - author (str, optional): The author of the message. Defaults to None.
         - elements (list, optional): A list of elements to attach to the message. Defaults to None.
         - actions (list, optional): A list of actions to attach to the message. Defaults to None.
+
+        See: https://docs.chainlit.io/api-reference/message
 
         Returns:
         - The response from cl.Message().send().
@@ -74,43 +81,91 @@ class ThorFindsObject(Workflow):
         )
         self.leolaniClient._add_utterance(AGENT, content)
         return await message.send() 
+   
+    async def ask_user(self, content, author=None, elements=None, actions=None):
+        """
+        Asks the user for input through the chainlit UI.
+        
+        
+        See: https://docs.chainlit.io/api-reference/ask/ask-for-input
+        
+        Returns:
+        - The response from the user, as a Step class.
+        (https://docs.chainlit.io/api-reference/step-class)
+        """
+        
+        self.leolaniClient._add_utterance(AGENT, content)
+        
+        res = await cl.AskUserMessage(content=content, 
+                                      author=author,  
+                                      timeout=INT_MAX, 
+                                      ).send()
+        
+        if res:
+            self.leolaniClient._add_utterance(HUMAN, res['output'])
+            return res['output']
     
     @cl.step(type="llm", name="step to evaluate the initial description")
     @step
     async def evaluate_initial_description(self, ev: StartEvent) -> InitialDescriptionComplete | InitialDescriptionIncomplete:
-        # Store the initial description in the AI2ThorClient instance and emissor
+        # Store the initial description in the AI2ThorClient instance and emissor.
         self.thor.initial_description = ev.initial_description
         self.leolaniClient._add_utterance(HUMAN, ev.initial_description)
         
         # Give user a summary of their initial description.
         await self.send_message(content=str(self.thor._llm_ollama.complete(f"Summarize the following description of a view: <description>{ev.initial_description}</description>.\nStart with 'You saw'. Keep your summary short and objective. Don't add any new information, if anything, make it more brief.")))
-        
-        # Generate a structured description 
-        self.thor.describe_view_from_image_structured()
-        
-        # Stream the structured description.
-        await self.send_message(content=self.thor.describe_view_from_image())
-        
-        # Parse the user input and generate a structured description
+
+        # Parse the user input and generate a structured description.
         self.thor.parse_unstructured_description(ev.initial_description)
-        
-        # Evaluate the initial description
-        if not self.thor.structured_initial_description:
-            return InitialDescriptionIncomplete(payload="There's not initial description given.")
-        if not self.thor.structured_initial_description.target_object:
-            return InitialDescriptionIncomplete(payload="There's no description of a target object.")
-        if not self.thor.structured_initial_description.room_description:
-            return InitialDescriptionIncomplete(payload="There's no description of the room.")
+
+        # Parse the structured description and generate a list of issues.
+        issues = evaluate_initial_description(self.thor.structured_initial_description)
+
+        if not issues:
+            return InitialDescriptionComplete()    
         else:
-            return InitialDescriptionComplete(payload="Initial description is incomplete.")
+            return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=self.thor.structured_initial_description)
 
     @cl.step(type="llm", name="step to clarify the initial description")
     @step
     async def clarify_initial_description(self, ev: InitialDescriptionIncomplete) -> InitialDescriptionComplete:
-        # Print the payload for the user to know why the initial description is incomplete.
-        await cl.Message(content=ev.payload + " Let's try to gather more information about what you saw").send()
+        # List the issues in the initial description to the user.
+        await self.send_message(content="Before we move on, I want to ask a few more questions about what you saw. The initial description is incomplete because:\n- " + "\n- ".join([issue for issue, relates_to in ev.issues_with_description]) + "\n\n Once I've gathered this minimal information, let's move on to find the object.")
+
+        # Generate clarifying questions from the list of issues.
+        questions = await generate_questions(issues=ev.issues_with_description, 
+                                             openai_client=self.thor._llm_openai_multimodal, 
+                                             structured_description=json.dumps(ev.structured_description, indent=4, default=str)
+                                             )
+
+        # Ask the user clarifying questions.
+        clarifying_questions_answers = list()
+        for question in questions:
+            answer = await self.ask_user(content=question.prompt)
+            clarifying_questions_answers.append({
+                "question": question.prompt,
+                "answer": answer,
+                "relates_to": question.relates_to
+            })
         
-        return InitialDescriptionComplete(payload="Description clarified.")
+        # For testing purposes, remove later.    
+        await self.send_message(content=str(clarifying_questions_answers))
+            
+        # Populate the initial description using answers to the clarifying questions.
+        clarified_structured_description = populate_initial_description(structured_description=ev.structured_description,
+                                     openai_client=self.thor._llm_openai_multimodal,
+                                     unstructured_description=self.thor.initial_description,
+                                     question_answer_pairs=clarifying_questions_answers)
+
+        # Check if the description is complete after clarifying questions were asked.
+        issues = evaluate_initial_description(clarified_structured_description)
+
+        if not issues:
+            await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
+            return InitialDescriptionComplete(payload="Description clarified.")    
+        else:
+            return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
+
 
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
@@ -121,7 +176,11 @@ class ThorFindsObject(Workflow):
 - A small side table with a blue vase and a decorative item beside the TV stand.
 - A wooden shelf or cabinet off to the left side of the room."""
         
-        await cl.Message(content="""Before we move on, let me tell you what I see. \n\nI see {}""".format(current_description)).send()
+        # Generate a structured view description from image.
+        self.thor.describe_view_from_image_structured()
+
+        # Generate and stream unstructured view description from image.
+        await self.send_message(content=self.thor.describe_view_from_image())
         
         if random.randint(0, 1) == 0:
             return RoomCorrect(payload="Correct room is found.")

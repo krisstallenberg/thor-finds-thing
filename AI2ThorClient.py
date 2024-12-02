@@ -32,7 +32,7 @@ class AI2ThorClient:
     An AI2Thor instance with methods wrapping its controller.
     """
 
-    def __init__(self, leolaniClient):
+    def __init__(self, leolaniClient, chat_mode):
         self._controller = Controller(
             agentMode="default",
             visibilityDistance=VISIBILITY_DISTANCE,
@@ -169,7 +169,9 @@ class AI2ThorClient:
         response = self._llm_openai_multimodal.beta.chat.completions.parse(
             model="gpt-4o-2024-08-06",
             messages=[
-                {"role": "system", "content": "Your task is to turn a user's description of an object, its context and the room type into a structured response. When information is missing from the user's description, do not make up parts of the description, go ONLY off of the user's description."},
+                {"role": "system", "content": """Your task is to turn a user's description of an object, its context and the room type into a structured response. 
+                 When information is missing from the user's description, do not make up parts of the description, go ONLY off of the user's description. 
+                 Only deviate from this rule when positions of objects in context are obvious, such as a floor (which is always below the target object) and a ceiling (which is above)."""},
                 {"role": "user", "content": description}
             ],
             response_format=InitialDescription,
