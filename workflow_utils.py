@@ -22,7 +22,7 @@ def evaluate_initial_description(structured_description: InitialDescription) -> 
         issues.append("The room description is missing entirely.")
     else:
         missing_room_attributes = []
-        if not room_desc.room_type:
+        if not room_desc.possible_room_types:
             missing_room_attributes.append("room type")
         if not room_desc.size:
             missing_room_attributes.append("size")
