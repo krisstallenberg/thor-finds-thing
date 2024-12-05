@@ -289,6 +289,8 @@ class AI2ThorClient:
     def _look(self, direction: str = "LookUp") -> None:
         """
         Robot looks up or down. Options are:
+        - LookUp
+        - LookDown
     
         Returns None
         """
@@ -302,7 +304,7 @@ class AI2ThorClient:
 
     def _rotate(self, direction: str, degrees: float = None) -> None:
         """
-        Robot turns in given direction.
+        Robot turns in given direction (for optional degrees).
         
         Parameters
         ----------
@@ -349,22 +351,35 @@ class AI2ThorClient:
     def _teleport(self, position: dict = None, rotation: dict = None, horizon: float = None, standing: bool = None, to_random: bool = False) -> None:
         """
         Robot teleports to random location.
+        
+        Parameters
+        ----------
+        position: dict
+            The 'x', 'y', 'z' coordinates.
+        rotation: num
+            The rotation of the agent's body. If unspecified, the rotation of the agent remains the same.
+        horizon: Float
+            Look up of down. Negative values (e.g. -30) correspond to agent looking up, and vice versa.
+        standing: bool
+            True for 
 
         Returns None
         """
 
         if to_random:
-            rotation = {"x": random.randint(0, 360), "y": random.randint(0, 360), "z": random.randint(0, 360)}
-            positions = self._controller.step(action="GetReachablePositions").metadata["actionReturn"]
-            position = random.choice(positions)
-
-        self._controller.step(
-            action="Teleport",
-            position=position,
-            rotation=rotation,
-            horizon=horizon,
-            standing=standing
-        )
+            rotation = dict(x=0, y=random.randint(0, 360), z=0)
+            reachable_positions = self._controller.step(action="GetReachablePositions").metadata["actionReturn"]
+            position = random.choice(reachable_positions)
+        
+        params = {"action": "Teleport", "position": position}
+        if rotation is not None:
+            params["rotation"] = rotation
+        if horizon is not None:
+            params["horizon"] = horizon
+        if standing is not None:
+            params["standing"] = standing
+            
+        self._controller.step(**params)
 
         self.leolaniClient._add_action(Action.Teleport)
         self._metadata.append(self._controller.last_event.metadata)
@@ -392,6 +407,27 @@ class AI2ThorClient:
             objects_in_sight = [obj for obj in objects_in_sight if obj["objectType"] == object_type]
 
         return objects_in_sight
+    
+    def _find_all_rooms(self, number=None):
+        """
+        Create a list of all rooms (based on `roomType` == "Floor") in current scene. 
+        Sorted from nearest to furthest.
+        
+        """
+        rooms = [obj for obj in self._controller.last_event.metadata["objects"] if obj["objectType"] == "Floor"]
+        
+        
+            
+    
+    def _find_nearest_center_of_room(self):
+        """
+        Create a dictionary with "x", "y", "z" coordinates of nearest center of room(s).
+        
+        Returns:
+        --------
+        """
+        nearest_room = self._find_all_rooms()
+        
 
     def _done(self) -> None:
         """
