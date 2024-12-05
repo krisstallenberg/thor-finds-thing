@@ -328,10 +328,9 @@ class AI2ThorClient:
         
         """
         rooms = [obj for obj in self._controller.last_event.metadata["objects"] if obj["objectType"] == "Floor"]
-        
-        
-            
-    
+        rooms.sort(key=lambda room: room['distance'])
+        return rooms
+
     def _find_nearest_center_of_room(self):
         """
         Create a dictionary with "x", "y", "z" coordinates of nearest center of room(s).
@@ -339,8 +338,11 @@ class AI2ThorClient:
         Returns:
         --------
         """
-        nearest_room = self._find_all_rooms()
         
+        rooms = self._find_all_rooms()
+        nearest_room = rooms[0]
+        center = nearest_room['axisAlignedBoundingBox']['center']
+        return center
 
     def _done(self) -> None:
         """
