@@ -24,7 +24,7 @@ class AI2ThorClient:
     An AI2Thor instance with methods wrapping its controller.
     """
 
-    def __init__(self, leolaniClient, chat_mode):
+    def __init__(self, leolaniClient, chat_mode: str = "Production", workflow = None):
         self._controller = Controller(
             agentMode="default",
             visibilityDistance=VISIBILITY_DISTANCE,
@@ -44,6 +44,7 @@ class AI2ThorClient:
             height=512,
             fieldOfView=90
             )
+
         self._metadata = []
         self.descriptions = []
         self.unstructured_descriptions = []
@@ -51,7 +52,8 @@ class AI2ThorClient:
         self._llm_ollama = OllamaLlamaIndex(model="llama3.2", request_timeout=120.0)
         self._llm_openai = OpenAILlamaIndex(model="gpt-4o-2024-08-06")
         self._llm_openai_multimodal = OpenAI()
-
+        self._chat_mode = chat_mode
+        self._workflow = workflow
 
     def describe_view_from_image(self):
         """
@@ -171,7 +173,11 @@ class AI2ThorClient:
 
     def _get_image(self):
         image = Image.fromarray(self._controller.last_event.frame)
+        
         # self.leolaniClient._add_image()
+        if self._chat_mode == "Developer":
+            self._workflow.send_message(content=image)
+        
         return image
     
         
