@@ -39,7 +39,7 @@ def evaluate_initial_description(structured_description: InitialDescription) -> 
             missing_context_attributes.append("position relative to the target object")
         if missing_context_attributes:
             object_name = obj.name or f"Context object {i}"
-            issues.append((f"The {object_name} is missing {', '.join(missing_context_attributes)}.", f"objects_in_context.{object_name}"))
+            issues.append((f"The {object_name.lower()} is missing {', '.join(missing_context_attributes)}.", f"objects_in_context.{object_name}"))
     
     # Check the target object
     target_object = structured_description.target_object
@@ -57,7 +57,7 @@ def evaluate_initial_description(structured_description: InitialDescription) -> 
             missing_object_attributes.append("color")
         if missing_object_attributes:
             object_name = target_object.name or "The target object"
-            issues.append((f"The target object ({object_name}) is missing {', '.join(missing_object_attributes)}.", "target_object"))
+            issues.append((f"The target object ({object_name.lower()}) is missing {', '.join(missing_object_attributes)}.", "target_object"))
 
     return issues
 
@@ -124,7 +124,6 @@ def populate_initial_description(
     Returns:
         InitialDescription: The updated structured description.
     """
-    # Use a language model to refine and fill in missing data
     response = openai_client.beta.chat.completions.parse(
         model="gpt-4o-2024-08-06",
         messages=[
