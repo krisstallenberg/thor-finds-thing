@@ -52,9 +52,9 @@ class ThorFindsObject(Workflow):
     
     def __init__(self, timeout: int = 10, verbose: bool = False):
         super().__init__(timeout=timeout, verbose=verbose)
-        chat_mode = cl.user_session.get("chat_profile")
+        self.chat_mode = cl.user_session.get("chat_profile")
         self.leolaniClient = LeolaniChatClient(emissor_path=EMISSOR_PATH, agent=AGENT, human=HUMAN)
-        self.thor = AI2ThorClient(self.leolaniClient, chat_mode)
+        self.thor = AI2ThorClient(self.leolaniClient, self.chat_mode, self)
         
     async def send_message(self, content, author=None, elements=None, actions=None):
         """
@@ -130,7 +130,7 @@ class ThorFindsObject(Workflow):
     @step
     async def clarify_initial_description(self, ev: InitialDescriptionIncomplete) -> InitialDescriptionComplete:
         # List the issues in the initial description to the user.
-        await self.send_message(content="Before we move on, I want to ask a few more questions about what you saw. The initial description is incomplete because:\n- " + "\n- ".join([issue for issue, relates_to in ev.issues_with_description]) + "\n\n Once I've gathered this minimal information, let's move on to find the object.")
+        await self.send_message(content="Before we move on, I want to ask a few more questions about what you saw. The description is incomplete because:\n- " + "\n- ".join([issue for issue, relates_to in ev.issues_with_description]) + "\n\n Once I've gathered this minimal information, let's move on to find the object.")
 
         # Generate clarifying questions from the list of issues.
         questions = await generate_questions(issues=ev.issues_with_description, 
@@ -161,11 +161,12 @@ class ThorFindsObject(Workflow):
             self.thor.clarified_structured_description = clarified_structured_description
             await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
             
-            # For testing purposes
-            await self.send_message(content=str(clarified_structured_description))
+            if self.chat_mode == "Developer":
+                await self.send_message(content=str(clarified_structured_description))
             
             return InitialDescriptionComplete(payload="Description clarified.")    
         else:
+            await self.send_message(content=f"Thank you! I noticed the description is still incomplete. I have stored your previous answers and I will ask some additional questions or repeat some to clarify your description.")
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
 
 
@@ -282,3 +283,18 @@ async def on_message(message: cl.Message):
 @cl.on_chat_end
 def end():
     print("Goodbye", cl.user_session.get("id"))
+
+@cl.set_chat_profiles
+async def chat_profile():
+    return [
+        cl.ChatProfile(
+            name="Production",
+            markdown_description="Communication is limited (for evalating or testing).",
+            icon="https://picsum.photos/200",
+        ),
+        cl.ChatProfile(
+            name="Developer",
+            markdown_description="Communication is extended with photos of AI2Thor's views and logs of internal processes.",
+            icon="https://picsum.photos/250",
+        ),
+    ]
