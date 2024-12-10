@@ -5,9 +5,14 @@ from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
 from descriptions import InitialDescription, ViewDescription
 from leolani_client import Action
 from openai import OpenAI
-# from torch.nn import functional as F
-from fastapi.encoders import jsonable_encoder as F
-
+import pandas as pd
+import torch
+from torchvision.transforms.functional import to_tensor
+from PIL import Image, ImageDraw
+from transformers import CLIPProcessor, CLIPModel
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+import numpy as np
 import random
 import base64
 import torchvision
@@ -18,8 +23,6 @@ from thor_utils import (
                         encode_image, 
                         get_distance,
                         closest_objects,
-                        detect_objects,
-                        classify_objects,
                         select_objects,
                         calculate_turn_angle,
                         expand_box,
@@ -27,8 +30,8 @@ from thor_utils import (
                         compute_final_angle
 			)
 # Constants
-VISIBILITY_DISTANCE = 1.5
-SCENE = "FloorPlan212"
+VISIBILITY_DISTANCE = 15
+SCENE = "FloorPlan211"
 
 class AI2ThorClient: 
     """
@@ -58,9 +61,8 @@ class AI2ThorClient:
         self._metadata = []
         self.descriptions = []
         self.unstructured_descriptions = []
-        self.context_objects = ['sofa', 'painting', 'table']
-        self.target_object = 'lamp'
-        self.global_dict = {}
+
+        self.objects_seen = {}
         self.leolaniClient = leolaniClient
         self._llm_ollama = OllamaLlamaIndex(model="llama3.2", request_timeout=120.0)
         self._llm_openai = OpenAILlamaIndex(model="gpt-4o-2024-08-06")
@@ -68,6 +70,7 @@ class AI2ThorClient:
         self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
         self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
         self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     def describe_view_from_image(self):
         """
@@ -189,20 +192,22 @@ class AI2ThorClient:
         """Main workflow to find objects and compute turn angles."""
 
         # Detection
-        detections, image_width, image_height = detect_objects(image)
+        detections, image_width, image_height = self._detect_objects(image)
 
         # Classification
-        detections_with_labels = classify_objects(detections, image, target_objects)
+        detections_df = self._classify_objects(detections, image, target_objects)
 
-        detections_df = pd.DataFrame(detections_with_labels)
+        # detections_df = pd.DataFrame(detections_with_labels)
+        if len(detections_df) == 0:
+            return None, None, None
 
         # Object Selection
-        obj_type, selected_objects = select_objects(detections_df, target_objects)
+        object_role, selected_objects = select_objects(detections_df, target_objects)
 
         # Angle Calculation
         turn_angle = compute_final_angle(selected_objects, image_width)
 
-        return turn_angle, detections_df, selected_objects
+        return turn_angle, detections_df, selected_objects, object_role
 
     def find_and_go_to_object(self):
         """
@@ -220,12 +225,10 @@ class AI2ThorClient:
                 - object_id: The ID of the object the agent approached, or None if unsuccessful.
                 - list: A list of log messages generated during the process.
         """
-        # targets=self.descriptions
+
         logs = []  # List to collect log messages
-        # target_label = targets['target_object']['name']
-        # context_objects = [item['name'] for item in targets.get('context', [])]
-        target_label=self.target_object
-        context_objects=self.context_objects
+        target_label = self.clarified_structured_description.target_object.name
+        context_objects = [object.name for object in self.clarified_structured_description.objects_in_context]
     
         # Step 1: Attempt to find and go to the target object
         object_id, logs = self._attempt_to_find_and_go_to_target(target_label, context_objects, logs)
@@ -233,7 +236,7 @@ class AI2ThorClient:
             logs.append(f"Target '{target_label}' not found. Going to the middle of the room.")
             
             # Step 2: Go to the middle of the room
-            thor._teleport(position=thor._find_nearest_center_of_room())
+            self._teleport(position=self._find_nearest_center_of_room())
             logs.append("Teleported to the middle of the room.")
         
             # Step 3: Retry finding and going to the target object
@@ -247,102 +250,105 @@ class AI2ThorClient:
 
 
 
-    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list) -> tuple:
+    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list) -> bool:
         """
         Attempt to locate the target object and move toward it.
         If the agent cannot step, teleport closer to the target.
-    
+
         Args:
             target_label (str): Name of the target object.
             context_objects (list): List of described object names.
             logs (list): A list to collect log messages.
-    
+
         Returns:
-            tuple: (object_id, list) where:
-                - object_id: The ID of the object the agent approached, or None if unsuccessful.
-                - list: A list of log messages.
+            bool: True if the target object is reached, False otherwise.
         """
         turn_angle = None  
         count_of_turns = 0  
-    
+
         while turn_angle is None:
             image = self._get_image()  # Update the image after each rotation
 
+<<<<<<< HEAD
             # Define target and described objects
             target_objects = {'target': target, 'context': context}
 
+=======
+>>>>>>> 874c0dd (Add implementation and debugging for the navigation. It takes finds the object for now and references it to a visible object. The navigation to object functions do not work yet.)
             # Run the workflow to find objects and calculate turn angles
-            turn_angle, detections_df, objects_selected = self._find_objects_and_angles(
+            turn_angle, detections_df, objects_selected, role = self._find_objects_and_angles(
                 image=image,
                 target_objects={'target': target_label,
                                 'context': context_objects}
             )
-            self.rotate(direction='left')  # Rotate to search for objects
-            logs.append(f"Rotated left to search for '{target_label}'.")
-            count_of_turns += 1
-    
+            if not turn_angle:
+                self._rotate(direction='RotateLeft')  # Rotate to search for objects
+                logs.append(f"Rotated left to search for '{target_label}'.")
+                count_of_turns += 1
+
             if count_of_turns == 4:  # If the object is not found after 4 rotations
                 logs.append(f"Target '{target_label}' not found after 4 rotations.")
-                return None, logs  # Target not found
-    
+                return False, logs  # Target not found
+        logs.append(f'{turn_angle}, turn angle found for {detections_df}')
         # Map target label to visible objects
-        visible_objects = self._find_objects_in_sight()
-        matched_objects = self._map_target_to_visible_objects(target_label, visible_objects)
-    
+        visible_objects = self._find_objects_in_sight(object_type=None)
+        matched_objects, logs = self._select_objects_by_similarity(logs, detections_df, target_label, visible_objects, similarity_threshold=0.75)
+        logs.append(f'{matched_objects} -matched objects')
+        logs.append( f'{detections_df} - detections_df')
+        logs.append( f'{objects_selected} -objects_selected')
         if not matched_objects:
             logs.append(f"No semantically matching objects found for target '{target_label}'.")
-            return None, logs
-    
+            return False, logs
+        logs.append(matched_objects)
         # Select the best object based on proximity to described objects
         # selected_object = self._select_best_object(matched_objects, context_objects, visible_objects)
-        logs.append(f"Matched target '{target_label}' to object: {selected_object}.")
-        for item in matched_objects:
-            for obj in visible_objects:
-                if obj['id'] == item:
-                    selected_object=obj
-        
-        
+        logs.append(f"Matched target '{target_label}' to object: {matched_objects}.")
+        selected_object=None
+        selected_object=matched_objects
         # Rotate to align with the selected object
         if turn_angle > 0:
-            self._rotate(direction='right', degrees=abs(turn_angle))
+            self._rotate(direction='RotateRight', degrees=abs(turn_angle))
             logs.append(f"Rotated right by {abs(turn_angle)} degrees to align with the target.")
         else:
-            self._rotate(direction='left', degrees=abs(turn_angle))
+            self._rotate(direction='RotateLeft', degrees=abs(turn_angle))
             logs.append(f"Rotated left by {abs(turn_angle)} degrees to align with the target.")
-    
+
         # Step toward the target object
         max_teleports = 10  # Prevent infinite retries
         teleport_count = 0
-    
+
         while teleport_count <= max_teleports:
             while True:
-                agent_position = self.metadata["position"]
+                # Access the agent's position
+                agent_position = self._metadata['agent']['position']
+
                 target_position = selected_object["position"]
-    
+
                 # Check if the target is within 3 meters
                 distance = get_distance(agent_position, target_position)
-                if distance <= 3:
+                if distance <= 1:
                     logs.append(f"Target '{target_label}' is within {distance:.2f} meters. Successfully reached.")
-                    return selected_object["id"], logs  # Return the ID of the target object
-    
+                    return selected_object['id'], logs  # Target successfully reached
+
                 # Try stepping toward the target
                 if not self._step():
                     logs.append("Step failed. Calculating closest teleportable position.")
                     break  # Exit to handle teleportation
-    
+
             # Handle teleportation if stepping fails
             teleport_position = self._calculate_closest_teleportable_position(agent_position, target_position)
             if teleport_position is None:
                 logs.append("No suitable teleportable position found.")
-                return None, logs
-    
+                return False, logs
+
             self._teleport(to=teleport_position)
             teleport_count += 1
             logs.append(f"Teleported to {teleport_position}. Resuming movement.")
-    
-        logs.append("Max teleports reached. Could not reach the target.")
-        return None, logs
 
+        logs.append("Max teleports reached. Could not reach the target.")
+        return False, logs
+
+<<<<<<< HEAD
         objects=[]
         if type(objects_selected)==dict:
             objects.append(objects_selected['label'])
@@ -363,67 +369,63 @@ class AI2ThorClient:
                                # This part needs more work, if it cant step is gets stuck
 
     def _map_target_to_visible_objects(self, target_label: str, visible_objects: list) -> list:
+=======
+    def _select_objects_by_similarity(self, logs, detections_df, target_label, visible_objects, similarity_threshold=0.40):
+>>>>>>> 874c0dd (Add implementation and debugging for the navigation. It takes finds the object for now and references it to a visible object. The navigation to object functions do not work yet.)
         """
-        Map the target label to the most semantically similar object(s) in visible objects using an LLM.
-        Return all objects of the same type if there are multiple matches.
-    
+        Select the best matching visible object for the target label based on semantic similarity using embeddings.
+
         Args:
-            target_label (str): The target label to map.
-            visible_objects (list): List of visible objects with their IDs and types.
-    
+            detections_df (DataFrame): DataFrame containing detected objects. Must include 'label' column.
+            target_label (str): The target label to match.
+            visible_objects (list): List of visible objects, each as a dictionary with 'objectType' and other properties.
+            similarity_threshold (float): The minimum cosine similarity required to consider a match.
+
         Returns:
-            list: A list of tuples containing the IDs and positions of the matched objects.
+            str or None: The object ID of the best match if similarity meets the threshold; otherwise, None.
         """
-        # Extract object types and positions from visible objects
-        object_data = [{"id": obj["id"], "type": obj["label"], "position": obj["position"]} for obj in visible_objects]
-        object_descriptions = [f"Object ID: {obj['id']}, Type: {obj['type']}" for obj in object_data]
-    
-        # Compose the LLM prompt
-        prompt = (
-            f"Match the target label '{target_label}' to the objects in the list below based on semantic similarity. "
-            f"If multiple objects are of the same type and match, return all their IDs. The list of objects is:\n"
-            + "\n".join(object_descriptions)
-        )
-    
-        # Query the LLM
-        response = self._llm_openai.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-    
-        # Extract the LLM response
-        matched_ids = response.choices[0].message.content.strip().split(",")
-        matched_ids = [id.strip() for id in matched_ids if id.strip()]  # Clean up the list
-    
-        # Validate and collect matched objects
-        matched_objects = [
-            {"id": obj["id"], "position": obj["position"], "type": obj["type"]}
-            for obj in object_data if obj["id"] in matched_ids
-        ]
-    
-        if not matched_objects:
-            print(f"No semantically matching objects found for target '{target_label}'.")
-            return []
-    
-        # If multiple objects of the same type exist, include all of them
-        types = [obj["type"] for obj in matched_objects]
-        if len(set(types)) == 1:  # All objects are of the same type
-            matched_objects = [
-                obj for obj in object_data if obj["type"] == types[0]
-            ]
-    
-        # Calculate positions relative to the agent's current direction
-        agent_position = self.metadata["position"]
-        agent_rotation = self.metadata["rotation"]
-        for obj in matched_objects:
-            obj["relative_position"] = self._calculate_relative_position(
-                agent_position, agent_rotation, obj["position"]
-            )
-    
-        print(f"Matched objects for target '{target_label}': {matched_objects}")
-        return matched_objects
+        # Step 1: Find the detected object with the same label as the target label
+        matching_detections = detections_df[detections_df["label"] == target_label]
+        if matching_detections.empty:
+            return None, logs  # No matching detection found
+
+        # Step 2: Extract object types from visible objects
+        object_data = [{"id": obj["objectId"], "type": obj["objectType"], "position": obj["position"]} for obj in visible_objects]
+        object_types = [obj["type"] for obj in object_data]
+        logs.append(object_types)
+        logs.append(matching_detections)
+
+
+
+        target_embedding = self._similarity_model.encode([target_label])
+        object_embeddings = self._similarity_model.encode(object_types)
+
+        # Step 5: Compute cosine similarity between the target label and all visible object types
+        similarities = cosine_similarity(target_embedding, object_embeddings).flatten()
+        logs.append(similarities)
+        # Step 6: Find the best match that exceeds the similarity threshold
+        # best_match_index = None
+        # max_similarity = -1
+        # for i, similarity in enumerate(similarities):
+        #     if similarity > max_similarity and similarity >= similarity_threshold:
+        #         max_similarity = similarity
+        #         best_match_index = i
+        # logs.append(best_match_index)
+        # best_match_index=int(best_match_index)
+        best_match_index = np.argmax(similarities)
+        best_match_index = int(best_match_index)
+        if similarities[best_match_index] <= similarity_threshold:
+            return None, logs
+        # Step 7: Return the object ID of the best match if found
+        if best_match_index is not None:
+            best_match_object = object_data[best_match_index]
+            logs.append(best_match_object)
+            return best_match_object, logs
+        else:
+            return None, logs  # No match meets the similarity threshold
+
+
+
     def _calculate_relative_position(self, agent_position: dict, agent_rotation: dict, object_position: dict) -> dict:
         """
         Calculate the relative position of an object with respect to the agent's direction.
@@ -515,6 +517,96 @@ class AI2ThorClient:
     
         return False
         
+
+    def _detect_objects(self, image, confidence_threshold=0.60):
+        """Detect objects using Faster R-CNN."""
+        image_width, image_height = image.size
+        tensor_image = to_tensor(image).unsqueeze(0)  # Correct usage
+
+        # Run Faster R-CNN
+        with torch.no_grad():
+            detections = self._frcnn_model(tensor_image)[0]
+
+        # Filter detections by confidence
+        valid_detections = [
+            {
+                "x1": box[0].item(),
+                "y1": box[1].item(),
+                "x2": box[2].item(),
+                "y2": box[3].item(),
+                "confidence": score.item(),
+            }
+            for box, score in zip(detections["boxes"], detections["scores"])
+            if score.item() >= confidence_threshold
+        ]
+        return valid_detections, image_width, image_height
+
+
+    def _classify_objects(self, detections, image, target_objects, padding=5):
+        """Classify detected objects using CLIP."""
+        image_width, image_height = image.size
+        detections_with_labels = []
+
+        if "target" not in target_objects or "context" not in target_objects:
+            raise ValueError("The 'target_objects' dictionary must contain 'target' and 'context' keys.")
+
+        for det in detections:
+            # Expand bounding box
+            x1, y1, x2, y2 = expand_box(
+                (det["x1"], det["y1"], det["x2"], det["y2"]),
+                image_width,
+                image_height,
+                padding,
+            )
+            cropped_image = image.crop((x1, y1, x2, y2))
+
+            try:
+                # Preprocess for CLIP
+                inputs = self._clip_processor(
+                    text=[target_objects["target"]] + target_objects["context"],
+                    images=cropped_image,
+                    return_tensors="pt",
+                    padding=True,
+                )
+
+                # Run CLIP classification
+                with torch.no_grad():
+                    outputs = self._clip_model(**inputs)
+                    logits_per_image = outputs.logits_per_image
+                    probs = logits_per_image.softmax(dim=1).squeeze(0)
+
+                # Assign label
+                labels = [target_objects["target"]] + target_objects["context"]
+                max_prob_idx = torch.argmax(probs).item()
+                detected_label = labels[max_prob_idx]
+                confidence = probs[max_prob_idx].item()
+
+                # Append result
+                object_center_x = (x1 + x2) / 2
+                detections_with_labels.append({
+                    "label": detected_label,
+                    "confidence": confidence,
+                    "center_x": object_center_x,
+                    "box": (x1, y1, x2, y2)
+                })
+            except Exception as e:
+                print(f"Error during CLIP classification: {e}")
+                continue
+
+        # Debugging: Print detections_with_labels
+        print("Detections with labels:", detections_with_labels)
+
+        # Create DataFrame
+        try:
+            detections_df = pd.DataFrame(detections_with_labels)
+            if detections_df.empty or "label" not in detections_df.columns:
+                return detections_df
+        except Exception as e:
+            print(f"Error creating DataFrame: {e}")
+            raise
+        detections_df = pd.DataFrame(detections_with_labels)
+        return detections_df
+
     
     def _get_image(self):
         image = Image.fromarray(self._controller.last_event.frame)
@@ -658,7 +750,7 @@ class AI2ThorClient:
         """
 
         # Get objects in sight
-        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visibility"] == True]
+        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
 
         # Optionally filter by object type
         if object_type:

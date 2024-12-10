@@ -1,6 +1,8 @@
 import base64
 import numpy as np
 import io
+from torchvision.transforms.functional import to_tensor
+import torch
 
 def encode_image(image):
 
@@ -51,109 +53,30 @@ def closest_objects(objectId, objects, num: int = 1):
     """
     pass
 
-def detect_objects(image, confidence_threshold=0.75):
-    """Detect objects using Faster R-CNN."""
-    image_width, image_height = image.size
-    tensor_image = F.to_tensor(image).unsqueeze(0)
-
-    # Run Faster R-CNN
-    # frcnn_model.eval()
-    with torch.no_grad():
-        detections = self._frcnn_model(tensor_image)[0]
-
-    # Filter detections by confidence
-    valid_detections = [
-        {
-            "x1": box[0].item(),
-            "y1": box[1].item(),
-            "x2": box[2].item(),
-            "y2": box[3].item(),
-            "confidence": score.item(),
-        }
-        for box, score in zip(detections["boxes"], detections["scores"])
-        if score.item() >= confidence_threshold
-    ]
-    return valid_detections, image_width, image_height
-
-
-
-def classify_objects(detections, image, target_objects, padding=30):
-    """Classify detected objects using CLIP."""
-    image_width, image_height = image.size
-    detections_with_labels = []
-
-    for det in detections:
-        # Expand bounding box
-        x1, y1, x2, y2 = expand_box(
-            (det["x1"], det["y1"], det["x2"], det["y2"]),
-            image_width,
-            image_height,
-            padding,
-        )
-        cropped_image = image.crop((x1, y1, x2, y2))
-
-        # Preprocess for CLIP
-        inputs = self._clip_processor(
-            text=[target_objects["target"]] + target_objects["described"],
-            images=cropped_image,
-            return_tensors="pt",
-            padding=True,
-        )
-
-        # Run CLIP classification
-        with torch.no_grad():
-            outputs = self._clip_model(**inputs)
-            logits_per_image = outputs.logits_per_image
-            probs = logits_per_image.softmax(dim=1).squeeze(0)
-
-        # Assign label
-        labels = [target_objects["target"]] + target_objects["described"]
-        max_prob_idx = torch.argmax(probs).item()
-        detected_label = labels[max_prob_idx]
-        confidence = probs[max_prob_idx].item()
-
-        # Append result
-        object_center_x = (x1 + x2) / 2
-        detections_with_labels.append({
-            "label": detected_label,
-            "confidence": confidence,
-            "center_x": object_center_x,
-            "box": (x1, y1, x2, y2)
-        })
-
-    return detections_with_labels
-
-
-
 def select_objects(detections_df, target_objects):
-    """Select the target and described objects."""
-    # Handle target object
+    """
+    Select the target object that is closest to the center of the context objects.
+    """
+    # Filter detections
     target_detections = detections_df[detections_df["label"] == target_objects["target"]]
-    described_detections = detections_df[detections_df["label"].isin(target_objects["described"])]
+    context_detections = detections_df[detections_df["label"].isin(target_objects["context"])]
 
-    # Select the closest target
-    if not target_detections.empty:
-        if not described_detections.empty:
-            described_avg_center = described_detections["center_x"].mean()
-            target_detections["distance"] = abs(target_detections["center_x"] - described_avg_center)
-            closest_target = target_detections.sort_values("distance").iloc[0].to_dict()  # Convert Series to dict
+    # Handle empty detections
+    if target_detections.empty:
+        return 'target', None
 
-            return "target", closest_target
+    if context_detections.empty:
+        # Safely return the highest-confidence target if no context objects are found
+        return 'target', target_detections.sort_values("confidence", ascending=False).iloc[0].to_dict() if not target_detections.empty else None
 
-    # Handle described objects
-    described_objects = target_objects["described"]
-    final_described = []
-    for obj in described_objects:
-        obj_detections = detections_df[detections_df["label"] == obj]
-        num_required = described_objects.count(obj)
+    # Calculate distances to context average center
+    context_avg_center = context_detections["center_x"].mean()
+    target_detections = target_detections.copy()  # Avoid in-place modification
+    target_detections["distance_to_context"] = abs(target_detections["center_x"] - context_avg_center)
 
-        if not obj_detections.empty:
-            if len(obj_detections) >= num_required:
-                obj_detections = obj_detections.sort_values("confidence", ascending=False).head(num_required)
-            final_described.extend(obj_detections.to_dict(orient="records"))  # Convert to list of dicts
-
-
-    return "described", final_described
+    # Return the closest target
+    closest_target = target_detections.sort_values("distance_to_context").iloc[0].to_dict()
+    return 'closest_target', closest_target
 
 
 def calculate_turn_angle(image_width, object_center_x):

@@ -23,3 +23,5 @@ llama-index-multi-modal-llms-openai
 matplotlib
 transformers
 torchvision
+Sklearn
+sentence_transformers
