@@ -380,3 +380,177 @@ class AI2ThorClient:
         self._controller.step(action="Done")
 
         self._metadata.append(self._controller.last_event.metadata)
+
+
+    def _find_objects_and_angles(self, image, target_objects):
+        """Main workflow to find objects and compute turn angles."""
+
+        # Detection
+        detections, image_width, image_height = self._detect_objects(image)
+
+        # Classification
+        detections_df = self._classify_objects(detections, image, target_objects)
+
+        # detections_df = pd.DataFrame(detections_with_labels)
+        if len(detections_df) == 0:
+            return None, None, None
+
+        # Object Selection
+        object_role, selected_objects = select_objects(detections_df, target_objects)
+
+        # Angle Calculation
+        turn_angle = compute_final_angle(selected_objects, image_width)
+
+        return turn_angle, detections_df, selected_objects, object_role
+
+    def find_and_go_to_object(self):
+        """
+        Locate the target object and move toward it.
+        If the target is not found initially, go to the middle of the room and retry.
+        If the object is still not found, return None.
+        
+        Args:
+            targets (dict): A dictionary containing:
+                - 'target_object': {'name': str} (Target object name).
+                - 'context': [{'name': str}] (Optional described objects in the picture).
+        
+        Returns:
+            tuple: (object_id, list) where:
+                - object_id: The ID of the object the agent approached, or None if unsuccessful.
+                - list: A list of log messages generated during the process.
+        """
+
+        logs = []  # List to collect log messages
+        target_label = self.clarified_structured_description.target_object.name
+        context_objects = [object.name for object in self.clarified_structured_description.objects_in_context]
+    
+        # Step 1: Attempt to find and go to the target object
+        object_id, logs = self._attempt_to_find_and_go_to_target(target_label, context_objects, logs)
+        if object_id is None:
+            logs.append(f"Target '{target_label}' not found. Going to the middle of the room.")
+            
+            # Step 2: Go to the middle of the room
+            self._teleport(position=self._find_nearest_center_of_room())
+            logs.append("Teleported to the middle of the room.")
+        
+            # Step 3: Retry finding and going to the target object
+            object_id, logs = self._attempt_to_find_and_go_to_target(target_label, context_objects, logs)
+            if object_id is None:
+                logs.append(f"Target '{target_label}' still not found. Returning None.")
+                return None, logs  # Target not found even after retrying
+    
+        logs.append(f"Target '{target_label}' successfully reached. Object ID: {object_id}")
+        return object_id, logs  # Return the object ID and logs
+
+    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list) -> bool:
+        """
+        Attempt to locate the target object and move toward it.
+        If the agent cannot step, teleport closer to the target.
+
+        Args:
+            target_label (str): Name of the target object.
+            context_objects (list): List of described object names.
+            logs (list): A list to collect log messages.
+
+        Returns:
+            bool: True if the target object is reached, False otherwise.
+        """
+        turn_angle = None  
+        count_of_turns = 0  
+
+        while turn_angle is None:
+            image = self._get_image()  # Update the image after each rotation
+
+            # Define target and described objects
+            target_objects = {'target': target, 'context': context}
+
+            # Run the workflow to find objects and calculate turn angles
+            turn_angle, detections_df, objects_selected, role = self._find_objects_and_angles(
+                image=image,
+                target_objects={'target': target_label,
+                                'context': context_objects}
+            )
+            if not turn_angle:
+                self._rotate(direction='RotateLeft')  # Rotate to search for objects
+                logs.append(f"Rotated left to search for '{target_label}'.")
+                count_of_turns += 1
+
+            if count_of_turns == 4:  # If the object is not found after 4 rotations
+                logs.append(f"Target '{target_label}' not found after 4 rotations.")
+                return False, logs  # Target not found
+        logs.append(f'{turn_angle}, turn angle found for {detections_df}')
+        # Map target label to visible objects
+        visible_objects = self._find_objects_in_sight(object_type=None)
+        matched_objects, logs = self._select_objects_by_similarity(logs, detections_df, target_label, visible_objects, similarity_threshold=0.75)
+        logs.append(f'{matched_objects} -matched objects')
+        logs.append( f'{detections_df} - detections_df')
+        logs.append( f'{objects_selected} -objects_selected')
+        if not matched_objects:
+            logs.append(f"No semantically matching objects found for target '{target_label}'.")
+            return False, logs
+        logs.append(matched_objects)
+        # Select the best object based on proximity to described objects
+        # selected_object = self._select_best_object(matched_objects, context_objects, visible_objects)
+        logs.append(f"Matched target '{target_label}' to object: {matched_objects}.")
+        selected_object=None
+        selected_object=matched_objects
+        # Rotate to align with the selected object
+        if turn_angle > 0:
+            self._rotate(direction='RotateRight', degrees=abs(turn_angle))
+            logs.append(f"Rotated right by {abs(turn_angle)} degrees to align with the target.")
+        else:
+            self._rotate(direction='RotateLeft', degrees=abs(turn_angle))
+            logs.append(f"Rotated left by {abs(turn_angle)} degrees to align with the target.")
+
+        # Step toward the target object
+        max_teleports = 10  # Prevent infinite retries
+        teleport_count = 0
+
+        while teleport_count <= max_teleports:
+            while True:
+                # Access the agent's position
+                agent_position = self._metadata['agent']['position']
+
+                target_position = selected_object["position"]
+
+                # Check if the target is within 3 meters
+                distance = get_distance(agent_position, target_position)
+                if distance <= 1:
+                    logs.append(f"Target '{target_label}' is within {distance:.2f} meters. Successfully reached.")
+                    return selected_object['id'], logs  # Target successfully reached
+
+                # Try stepping toward the target
+                if not self._step():
+                    logs.append("Step failed. Calculating closest teleportable position.")
+                    break  # Exit to handle teleportation
+
+            # Handle teleportation if stepping fails
+            teleport_position = self._calculate_closest_teleportable_position(agent_position, target_position)
+            if teleport_position is None:
+                logs.append("No suitable teleportable position found.")
+                return False, logs
+
+            self._teleport(to=teleport_position)
+            teleport_count += 1
+            logs.append(f"Teleported to {teleport_position}. Resuming movement.")
+
+        logs.append("Max teleports reached. Could not reach the target.")
+        return False, logs
+
+        objects=[]
+        if type(objects_selected)==dict:
+            objects.append(objects_selected['label'])
+        else:
+            for item in objects_selected:
+                objects.append(item['label'])
+        # approach the target object
+        while True:
+            visible_objects = self._find_objects_in_sight(object_type=[objects[0]])
+            if target in visible_objects:  
+                if target in objects[0]:
+                    return True, 'target'    # Target object is in sight
+                else:
+                    return True, 'context'
+            if not self._step():
+                print("Step failed")
+                return False
