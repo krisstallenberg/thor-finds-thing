@@ -18,6 +18,8 @@ import random
 import base64
 import torchvision
 from transformers import CLIPProcessor, CLIPModel
+import torchvision
+from transformers import CLIPProcessor, CLIPModel
 import json
 import time
 from thor_utils import ( 
