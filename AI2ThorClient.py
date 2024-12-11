@@ -702,3 +702,94 @@ class AI2ThorClient:
             return True
     
         return False
+
+
+    
+    def _detect_objects(self, image, confidence_threshold=0.60):
+        """Detect objects using Faster R-CNN."""
+        image_width, image_height = image.size
+        tensor_image = to_tensor(image).unsqueeze(0)  # Correct usage
+
+        # Run Faster R-CNN
+        with torch.no_grad():
+            detections = self._frcnn_model(tensor_image)[0]
+
+        # Filter detections by confidence
+        valid_detections = [
+            {
+                "x1": box[0].item(),
+                "y1": box[1].item(),
+                "x2": box[2].item(),
+                "y2": box[3].item(),
+                "confidence": score.item(),
+            }
+            for box, score in zip(detections["boxes"], detections["scores"])
+            if score.item() >= confidence_threshold
+        ]
+        return valid_detections, image_width, image_height
+
+
+    def _classify_objects(self, detections, image, target_objects, padding=5):
+        """Classify detected objects using CLIP."""
+        image_width, image_height = image.size
+        detections_with_labels = []
+
+        if "target" not in target_objects or "context" not in target_objects:
+            raise ValueError("The 'target_objects' dictionary must contain 'target' and 'context' keys.")
+
+        for det in detections:
+            # Expand bounding box
+            x1, y1, x2, y2 = expand_box(
+                (det["x1"], det["y1"], det["x2"], det["y2"]),
+                image_width,
+                image_height,
+                padding,
+            )
+            cropped_image = image.crop((x1, y1, x2, y2))
+
+            try:
+                # Preprocess for CLIP
+                inputs = self._clip_processor(
+                    text=[target_objects["target"]] + target_objects["context"],
+                    images=cropped_image,
+                    return_tensors="pt",
+                    padding=True,
+                )
+
+                # Run CLIP classification
+                with torch.no_grad():
+                    outputs = self._clip_model(**inputs)
+                    logits_per_image = outputs.logits_per_image
+                    probs = logits_per_image.softmax(dim=1).squeeze(0)
+
+                # Assign label
+                labels = [target_objects["target"]] + target_objects["context"]
+                max_prob_idx = torch.argmax(probs).item()
+                detected_label = labels[max_prob_idx]
+                confidence = probs[max_prob_idx].item()
+
+                # Append result
+                object_center_x = (x1 + x2) / 2
+                detections_with_labels.append({
+                    "label": detected_label,
+                    "confidence": confidence,
+                    "center_x": object_center_x,
+                    "box": (x1, y1, x2, y2)
+                })
+            except Exception as e:
+                print(f"Error during CLIP classification: {e}")
+                continue
+
+        # Debugging: Print detections_with_labels
+        print("Detections with labels:", detections_with_labels)
+
+        # Create DataFrame
+        try:
+            detections_df = pd.DataFrame(detections_with_labels)
+            if detections_df.empty or "label" not in detections_df.columns:
+                return detections_df
+        except Exception as e:
+            print(f"Error creating DataFrame: {e}")
+            raise
+        detections_df = pd.DataFrame(detections_with_labels)
+        return detections_df
