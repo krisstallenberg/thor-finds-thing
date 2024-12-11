@@ -554,3 +554,151 @@ class AI2ThorClient:
             if not self._step():
                 print("Step failed")
                 return False
+
+
+    def _map_target_to_visible_objects(self, target_label: str, visible_objects: list) -> list:
+        """
+        Select the best matching visible object for the target label based on semantic similarity using embeddings.
+
+        Args:
+            detections_df (DataFrame): DataFrame containing detected objects. Must include 'label' column.
+            target_label (str): The target label to match.
+            visible_objects (list): List of visible objects, each as a dictionary with 'objectType' and other properties.
+            similarity_threshold (float): The minimum cosine similarity required to consider a match.
+
+        Returns:
+            str or None: The object ID of the best match if similarity meets the threshold; otherwise, None.
+        """
+        # Step 1: Find the detected object with the same label as the target label
+        matching_detections = detections_df[detections_df["label"] == target_label]
+        if matching_detections.empty:
+            return None, logs  # No matching detection found
+
+        # Step 2: Extract object types from visible objects
+        object_data = [{"id": obj["objectId"], "type": obj["objectType"], "position": obj["position"]} for obj in visible_objects]
+        object_types = [obj["type"] for obj in object_data]
+        logs.append(object_types)
+        logs.append(matching_detections)
+
+
+
+        target_embedding = self._similarity_model.encode([target_label])
+        object_embeddings = self._similarity_model.encode(object_types)
+
+        # Step 5: Compute cosine similarity between the target label and all visible object types
+        similarities = cosine_similarity(target_embedding, object_embeddings).flatten()
+        logs.append(similarities)
+        # Step 6: Find the best match that exceeds the similarity threshold
+        # best_match_index = None
+        # max_similarity = -1
+        # for i, similarity in enumerate(similarities):
+        #     if similarity > max_similarity and similarity >= similarity_threshold:
+        #         max_similarity = similarity
+        #         best_match_index = i
+        # logs.append(best_match_index)
+        # best_match_index=int(best_match_index)
+        best_match_index = np.argmax(similarities)
+        best_match_index = int(best_match_index)
+        if similarities[best_match_index] <= similarity_threshold:
+            return None, logs
+        # Step 7: Return the object ID of the best match if found
+        if best_match_index is not None:
+            best_match_object = object_data[best_match_index]
+            logs.append(best_match_object)
+            return best_match_object, logs
+        else:
+            return None, logs
+
+
+
+    
+    def _calculate_relative_position(self, agent_position: dict, agent_rotation: dict, object_position: dict) -> dict:
+        """
+        Calculate the relative position of an object with respect to the agent's direction.
+    
+        Args:
+            agent_position (dict): The agent's current position (x, y, z).
+            agent_rotation (dict): The agent's current rotation (yaw, pitch, roll).
+            object_position (dict): The object's position (x, y, z).
+    
+        Returns:
+            dict: A dictionary with relative position information:
+                  - distance (float): The Euclidean distance between the agent and the object.
+                  - angle (float): The relative angle of the object to the agent's forward direction.
+        """
+        import math
+    
+        # Calculate the vector from the agent to the object
+        dx = object_position["x"] - agent_position["x"]
+        dz = object_position["z"] - agent_position["z"]
+    
+        # Calculate the Euclidean distance
+        distance = (dx**2 + dz**2) ** 0.5
+    
+        # Calculate the angle relative to the agent's forward direction
+        
+        agent_yaw = agent_rotation["yaw"]  # Agent's forward direction (in degrees)
+        object_angle = math.degrees(math.atan2(dz, dx))  # Object's angle relative to the origin
+        relative_angle = (object_angle - agent_yaw + 360) % 360  # Normalize to [0, 360)
+    
+        # Normalize angle to [-180, 180] for easier directional interpretation
+        if relative_angle > 180:
+            relative_angle -= 360
+    
+        return {"distance": distance, "angle": relative_angle}
+    
+    
+    def _calculate_closest_teleportable_position(self, agent_position: dict, target_position: dict) -> dict:
+        """
+        Calculate the closest teleportable position along the line between the agent and the target.
+    
+        Args:
+            agent_position (dict): Current position of the agent (x, y, z).
+            target_position (dict): Position of the target object (x, y, z).
+    
+        Returns:
+            dict or None: The closest teleportable position if found, otherwise None.
+        """
+        teleportable_positions = self.metadata["teleportable_positions"]
+    
+        closest_position = None
+        min_distance = float('inf')
+    
+        for pos in teleportable_positions:
+            # Check if the teleportable position is on the line between agent and target
+            if self._is_on_line(agent_position, target_position, pos):
+                distance = get_distance(agent_position, pos)  # Use get_distance function
+                if distance < min_distance:
+                    closest_position = pos
+                    min_distance = distance
+    
+        return closest_position
+    
+    
+    def _is_on_line(self, agent_position: dict, target_position: dict, point: dict) -> bool:
+        """
+        Determine if a point is on the line segment between the agent and the target.
+    
+        Args:
+            agent_position (dict): Current position of the agent.
+            target_position (dict): Position of the target object.
+            point (dict): Teleportable position to check.
+    
+        Returns:
+            bool: True if the point lies on the line, False otherwise.
+        """
+        # Extract coordinates
+        ax, az = agent_position["x"], agent_position["z"]
+        tx, tz = target_position["x"], target_position["z"]
+        px, pz = point["x"], point["z"]
+    
+        # Check collinearity using the cross-product method
+        cross_product = abs((px - ax) * (tz - az) - (pz - az) * (tx - ax))
+        if cross_product > 1e-5:  # Allow for floating-point tolerance
+            return False
+    
+        # Check if the point is within the bounding box of the line segment
+        if min(ax, tx) <= px <= max(ax, tx) and min(az, tz) <= pz <= max(az, tz):
+            return True
+    
+        return False
