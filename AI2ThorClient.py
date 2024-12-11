@@ -81,6 +81,8 @@ class AI2ThorClient:
         self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
         self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
         self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self._rooms = self._find_all_rooms()
+        self._rooms_visited = []
 
     def describe_view_from_image(self):
         """
