@@ -210,6 +210,7 @@ class ThorFindsObject(Workflow):
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
     async def find_object_in_room(self, ev: RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
+<<<<<<< HEAD
         """
         Attempts to locate the object in the room.
         
@@ -240,6 +241,9 @@ class ThorFindsObject(Workflow):
             await cl.Message(content=log).send()
         
         return ObjectNotInRoom(payload="The object could not be found in this room.")
+=======
+<<<<<<< HEAD
+>>>>>>> 1037bd8 (Update find_object_in_room function in main.py)
         if random.randint(0, 10) < 4:
             self.leolaniClient._save_scenario()
             return ObjectInRoom(payload="Object may be in this room.")
@@ -247,6 +251,38 @@ class ThorFindsObject(Workflow):
             self.leolaniClient._save_scenario()
             return ObjectNotInRoom(payload="Object is not in this room.")
     
+=======
+        """
+        Attempts to locate the object in the room.
+        
+        Parameters:
+        - ev: RoomCorrect event indicating the room has been identified.
+
+        Returns:
+        - ObjectInRoom: If the object is found in the room.
+        - ObjectNotInRoom: If the object is not in the room.
+        """
+        # Log the current state or description of the room
+        await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
+        
+        # Use the AI2ThorClient to search for the object
+        obj_id, logs = self.thor.find_and_go_to_object()  # Assuming this function returns (object_id, logs)
+
+        # Process the search results
+        if obj_id:  # If the object ID is found
+            # Log the success and send detailed logs to the user
+            for log in logs:
+                await cl.Message(content=log).send()
+            
+            # Return the ObjectInRoom event
+            return ObjectInRoom(payload=f"Object found! Identifier: {obj_id}")
+        
+        # If the object is not found, log and return ObjectNotInRoom
+        for log in logs:
+            await cl.Message(content=log).send()
+        
+        return ObjectNotInRoom(payload="The object could not be found in this room.")
+>>>>>>> 6b4b5d5 (Update find_object_in_room function in main.py)
     @cl.step(type="llm" , name="step to suggest an object")
     @step 
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
