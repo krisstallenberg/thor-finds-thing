@@ -180,10 +180,12 @@ class ThorFindsObject(Workflow):
     @step
     async def find_correct_room_type(self, ev: InitialDescriptionComplete | RoomIncorrect | ObjectNotInRoom) -> RoomCorrect | RoomIncorrect:
         target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
+        target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
         # Generate a structured view description from image.
         self.thor.describe_view_from_image_structured()
 
+        # Generate and display unstructured view description from image.
         # Generate and display unstructured view description from image.
         await self.send_message(content=self.thor.describe_view_from_image())
         
@@ -202,13 +204,31 @@ class ThorFindsObject(Workflow):
             # Decide (with user) whether to look for the object in current room
             await self.ask_user(content=f"Should we look for the object in the current room?") 
         
+        # Teleport to center of current room.
+        if self.thor._teleport_to_nearest_new_room():
+            await self.send_message(content="I've moved to the center of the current room.")
+            
+            # Describe the current view to the user
+            await self.send_message(content=self.thor.describe_view_from_image())
+            
+            # Infer the room type of the current room and communicate to user
+            room_type = self.thor.infer_room_type()
+            await self.send_message(content=f"Based on what I see, I think this room is of type {room_type}")
+            await self.send_message(content=f"We're looking for a {target_room_types}")
+            
+            # Decide (with user) whether to look for the object in current room
+            await self.ask_user(content=f"Should we look for the object in the current room?") 
+        
         if random.randint(0, 1) == 0:
+            self.leolaniClient._save_scenario()
             self.leolaniClient._save_scenario()
             return RoomCorrect(payload="Correct room is found.")
         else:
             self.leolaniClient._save_scenario()
+            self.leolaniClient._save_scenario()
             return RoomIncorrect(payload="Correct room is not found.")
 
+    @cl.step(type="llm", name="step to find the object in the current room")
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
     async def find_object_in_room(self, ev: RoomCorrect | RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
@@ -230,6 +250,7 @@ class ThorFindsObject(Workflow):
             agent_info = [0, None, None]
         # Use the AI2ThorClient to search for the object
         if agent_info[0] == 3:
+            self.leolaniClient._save_scenario()
             return ObjectNotInRoom(payload="The object could not be found in this room.")
 
         logs=[]
@@ -247,11 +268,12 @@ class ThorFindsObject(Workflow):
             return ObjectInRoom(payload=f"Object found! Identifier",object_id = obj_id, agent_info = agent_info )
         
         else:
-        
-            return ObjectNotInRoom(payload="The object could not be found in this room.")
-
+            self.leolaniClient._save_scenario()
+            return ObjectNotInRoom(payload="Object is not in this room.")
+    
     @cl.step(type="llm" , name="step to suggest an object")
     @step 
+    async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
         
         actions = [
@@ -266,11 +288,15 @@ class ThorFindsObject(Workflow):
             ],
             timeout=INT_MAX
         )
+        )
         
         if object_found.get("value") == "yes":
             self.leolaniClient._save_scenario()
+            self.leolaniClient._save_scenario()
             return StopEvent(result="We found the object!")  # End the workflow
         else:
+            self.leolaniClient._save_scenario()
+            return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
             self.leolaniClient._save_scenario()
             return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
 
@@ -293,6 +319,23 @@ async def on_chat_start():
     
     # Introductory messages to be streamed
     intro_messages = [
+    "Hey, there!\n\nWe are going to try to find an object together, only through text communication.",
+    """To get started, please describe what you saw in detail. 
+
+I'm interested in descriptions of:
+
+- The target object we're looking for.
+- The placement of the object within the scene.
+- Other objects in the scene, including:
+  - Their colors, shapes, textures, and sizes.
+  - Their position relative to the target object.
+- What type of room it appeared to be in:
+  - Did it look like a kitchen, bedroom, living room, bathroom, or a mix?
+
+Please write in complete sentences. 
+
+Based on the completeness of your answer, I may ask follow-up questions."""
+]
     "Hey, there!\n\nWe are going to try to find an object together, only through text communication.",
     """To get started, please describe what you saw in detail. 
 
