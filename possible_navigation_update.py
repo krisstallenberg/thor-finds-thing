@@ -314,6 +314,7 @@ def _is_on_line(self, agent_position: dict, target_position: dict, point: dict) 
         return True
 
     return False
+<<<<<<< HEAD
 
 
 
@@ -479,3 +480,5 @@ def exit_room(self)  -> tuple[bool, list]:
     logs.append("Max teleports reached. Could not exit the room.")
     return False, logs
 
+=======
+>>>>>>> 6696e1c (Navigation improvements)

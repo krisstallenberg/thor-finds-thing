@@ -269,12 +269,9 @@ class AI2ThorClient:
         while turn_angle is None:
             image = self._get_image()  # Update the image after each rotation
 
-<<<<<<< HEAD
             # Define target and described objects
             target_objects = {'target': target, 'context': context}
 
-=======
->>>>>>> 874c0dd (Add implementation and debugging for the navigation. It takes finds the object for now and references it to a visible object. The navigation to object functions do not work yet.)
             # Run the workflow to find objects and calculate turn angles
             turn_angle, detections_df, objects_selected, role = self._find_objects_and_angles(
                 image=image,
@@ -348,7 +345,6 @@ class AI2ThorClient:
         logs.append("Max teleports reached. Could not reach the target.")
         return False, logs
 
-<<<<<<< HEAD
         objects=[]
         if type(objects_selected)==dict:
             objects.append(objects_selected['label'])
@@ -369,9 +365,6 @@ class AI2ThorClient:
                                # This part needs more work, if it cant step is gets stuck
 
     def _map_target_to_visible_objects(self, target_label: str, visible_objects: list) -> list:
-=======
-    def _select_objects_by_similarity(self, logs, detections_df, target_label, visible_objects, similarity_threshold=0.40):
->>>>>>> 874c0dd (Add implementation and debugging for the navigation. It takes finds the object for now and references it to a visible object. The navigation to object functions do not work yet.)
         """
         Select the best matching visible object for the target label based on semantic similarity using embeddings.
 
