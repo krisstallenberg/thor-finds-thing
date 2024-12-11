@@ -76,6 +76,11 @@ class AI2ThorClient:
         self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
         self._rooms = self._find_all_rooms()
         self._rooms_visited = []
+        self.objects_seen = {}
+        self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
+        self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
+        self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     def describe_view_from_image(self):
         """
