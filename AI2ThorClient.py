@@ -5,19 +5,34 @@ from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
 from descriptions import InitialDescription, ViewDescription
 from leolani_client import Action
 from openai import OpenAI
+import pandas as pd
+import torch
+from torchvision.transforms.functional import to_tensor
+from PIL import Image, ImageDraw
+from transformers import CLIPProcessor, CLIPModel
+from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer
+import numpy as np
 import random
 import base64
+import torchvision
+from transformers import CLIPProcessor, CLIPModel
 import json
 import time
 from thor_utils import ( 
                         encode_image, 
                         get_distance,
-                        closest_objects
-                       )
+                        closest_objects,
+                        select_objects,
+                        calculate_turn_angle,
+                        expand_box,
+                        calculate_turn_angle,
+                        compute_final_angle
+			)
 
 # Constants
-VISIBILITY_DISTANCE = 1.5
-SCENE = "FloorPlan212"
+VISIBILITY_DISTANCE = 15
+SCENE = "FloorPlan211"
 
 class AI2ThorClient: 
     """
@@ -54,6 +69,11 @@ class AI2ThorClient:
         self._llm_openai_multimodal = OpenAI()
         self._chat_mode = chat_mode
         self._workflow = workflow
+        self.objects_seen = {}
+        self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
+        self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
+        self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
 
     def describe_view_from_image(self):
         """
