@@ -211,6 +211,9 @@ class ThorFindsObject(Workflow):
     @step 
     async def find_object_in_room(self, ev: RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 95f249c (Update find_object_in_room function in main.py)
         """
         Attempts to locate the object in the room.
         
@@ -241,9 +244,12 @@ class ThorFindsObject(Workflow):
             await cl.Message(content=log).send()
         
         return ObjectNotInRoom(payload="The object could not be found in this room.")
+<<<<<<< HEAD
 =======
 <<<<<<< HEAD
 >>>>>>> 1037bd8 (Update find_object_in_room function in main.py)
+=======
+>>>>>>> 95f249c (Update find_object_in_room function in main.py)
         if random.randint(0, 10) < 4:
             self.leolaniClient._save_scenario()
             return ObjectInRoom(payload="Object may be in this room.")
