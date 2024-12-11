@@ -44,6 +44,7 @@ class RoomIncorrect(Event):
 
 class ObjectInRoom(Event):
     payload: str
+    turns_done: int
 
 class ObjectNotInRoom(Event):
     payload: str
@@ -121,6 +122,7 @@ class ThorFindsObject(Workflow):
         # Parse the structured description and generate a list of issues.
         issues = evaluate_initial_description(self.thor.structured_initial_description)
 
+        self.leolaniClient._save_scenario()
         if not issues:
             return InitialDescriptionComplete()    
         else:
@@ -163,34 +165,49 @@ class ThorFindsObject(Workflow):
             
             if self.chat_mode == "Developer":
                 await self.send_message(content=str(clarified_structured_description))
+            self.leolaniClient._save_scenario()
+            return InitialDescriptionComplete(payload="Description clarified.")
             
-            return InitialDescriptionComplete(payload="Description clarified.")    
         else:
             await self.send_message(content=f"Thank you! I noticed the description is still incomplete. I have stored your previous answers and I will ask some additional questions or repeat some to clarify your description.")
+            self.leolaniClient._save_scenario()
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
 
 
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
     async def find_correct_room_type(self, ev: InitialDescriptionComplete | RoomIncorrect | ObjectNotInRoom) -> RoomCorrect | RoomIncorrect:
-        current_description = """a living room setup viewed from behind a dark-colored couch. The room has light-colored walls and a floor that seems to be a muted, earthy tone. The main items in the room include:
-- A large, dark-colored sofa in the foreground facing a TV.
-- A television placed on a small white TV stand, positioned along the far wall.
-- A small side table with a blue vase and a decorative item beside the TV stand.
-- A wooden shelf or cabinet off to the left side of the room."""
+        target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
         # Generate a structured view description from image.
         self.thor.describe_view_from_image_structured()
 
-        # Generate and stream unstructured view description from image.
+        # Generate and display unstructured view description from image.
         await self.send_message(content=self.thor.describe_view_from_image())
         
+        # Teleport to center of current room.
+        if self.thor._teleport_to_nearest_new_room():
+            await self.send_message(content="I've moved to the center of the current room.")
+            
+            # Describe the current view to the user
+            await self.send_message(content=self.thor.describe_view_from_image())
+            
+            # Infer the room type of the current room and communicate to user
+            room_type = self.thor.infer_room_type()
+            await self.send_message(content=f"Based on what I see, I think this room is of type {room_type}")
+            await self.send_message(content=f"We're looking for a {target_room_types}")
+            
+            # Decide (with user) whether to look for the object in current room
+            await self.ask_user(content=f"Should we look for the object in the current room?") 
+        
         if random.randint(0, 1) == 0:
+            self.leolaniClient._save_scenario()
             return RoomCorrect(payload="Correct room is found.")
         else:
+            self.leolaniClient._save_scenario()
             return RoomIncorrect(payload="Correct room is not found.")
 
-    @cl.step(type="llm", name="step to find the object in the room")
+    @cl.step(type="llm", name="step to find the object in the current room")
     @step 
     async def find_object_in_room(self, ev: RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
         """
@@ -223,31 +240,36 @@ class ThorFindsObject(Workflow):
             await cl.Message(content=log).send()
         
         return ObjectNotInRoom(payload="The object could not be found in this room.")
+        if random.randint(0, 10) < 4:
+            self.leolaniClient._save_scenario()
+            return ObjectInRoom(payload="Object may be in this room.")
+        else:
+            self.leolaniClient._save_scenario()
+            return ObjectNotInRoom(payload="Object is not in this room.")
+    
     @cl.step(type="llm" , name="step to suggest an object")
     @step 
-    async def suggest_object(self, ev: ObjectInRoom | WrongObjectSuggested) -> WrongObjectSuggested | ObjectNotInRoom | StopEvent:
+    async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
         
         actions = [
         cl.Action(name="Yes", value="example_value", description="The identifier matches the one of the target object."),
         ]
         
-        object_found = await cl.AskActionMessage( 
+        object_found = await self.ask_user( 
             content="Does the target object have identifier {} ?".format(random.randint(1000, 9999)),
             actions=[
                 cl.Action(name="Yes", value="yes", label="✅ Yes"),
                 cl.Action(name="No", value="no", label="❌ No"),
             ],
             timeout=INT_MAX
-        ).send()
+        )
         
         if object_found.get("value") == "yes":
-            self.leolaniClient._save_scenario() 
+            self.leolaniClient._save_scenario()
             return StopEvent(result="We found the object!")  # End the workflow
         else:
-            if random.randint(0, 1) == 0:
-                return WrongObjectSuggested(payload="Couldn't find object in this room.")
-            else:
-                return ObjectNotInRoom(payload="Object is not in this room.")
+            self.leolaniClient._save_scenario()
+            return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
 
 import asyncio
 
@@ -268,20 +290,26 @@ async def on_chat_start():
     
     # Introductory messages to be streamed
     intro_messages = [
-        "Hey, there!\n\n We are going to try to find an object together, only through text communication.",
-        "To get started, please describe what you saw in detail. Describe the object, its surroundings and what type of room it appeared to be in. Please write in complete sentences."
-    ]
+    "Hey, there!\n\nWe are going to try to find an object together, only through text communication.",
+    """To get started, please describe what you saw in detail. 
+
+I'm interested in descriptions of:
+
+- The target object we're looking for.
+- The placement of the object within the scene.
+- Other objects in the scene, including:
+  - Their colors, shapes, textures, and sizes.
+  - Their position relative to the target object.
+- What type of room it appeared to be in:
+  - Did it look like a kitchen, bedroom, living room, bathroom, or a mix?
+
+Please write in complete sentences. 
+
+Based on the completeness of your answer, I may ask follow-up questions."""
+]
     
     for message in intro_messages:
-        # Initialize the message with an empty content for streaming
-        response_message = cl.Message(content="")
-        await response_message.send()
-        
-        for letter in message:
-            response_message.content += letter
-            await response_message.update()  
-            await asyncio.sleep(0.01) 
-        await asyncio.sleep(1) 
+        await cl.Message(message).send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
@@ -295,15 +323,7 @@ async def on_message(message: cl.Message):
     app = cl.user_session.get("app")
     result = await app.run(initial_description=message.content)
     
-    # Initialize the response message with an empty content
-    response_message = cl.Message(content="")
-    await response_message.send()
-    
-    # Stream the result letter by letter with delays in between
-    for letter in result:
-        response_message.content += letter
-        await response_message.update() 
-        await asyncio.sleep(0.01)
+    await cl.Message(content=result).send()
 
 @cl.on_chat_end
 def end():

@@ -74,6 +74,8 @@ class AI2ThorClient:
         self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
         self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
         self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
+        self._rooms = self._find_all_rooms()
+        self._rooms_visited = []
 
     def describe_view_from_image(self):
         """
@@ -356,19 +358,58 @@ class AI2ThorClient:
         rooms = [obj for obj in self._controller.last_event.metadata["objects"] if obj["objectType"] == "Floor"]
         rooms.sort(key=lambda room: room['distance'])
         return rooms
+    
+    def find_nearest_reachable_position(self, destination) -> dict:
+        """
+        Find a reachable position that is nearest to the given destination.
+        
+        Parameters
+        ----------
+        destination: dict
+            A dictionary of x, y, z coordinates of the destination.
+            
+        Returns
+        -------
+        dict:
+            a dictionary of x, y, z coordinates representing the nearest reachable position.
+        """
+        pass    
 
-    def _find_nearest_center_of_room(self):
+    def _teleport_to_nearest_new_room(self) -> str:
         """
-        Create a dictionary with "x", "y", "z" coordinates of nearest center of room(s).
-        
-        Returns:
-        --------
+        Teleports the agent to the center of the nearest room if reachable.
+        If not, teleports to the nearest reachable position to the center.
+
+        Returns
+        -------
+        str
+            The `objectId` of the room teleported to.
         """
-        
         rooms = self._find_all_rooms()
-        nearest_room = rooms[0]
-        center = nearest_room['axisAlignedBoundingBox']['center']
-        return center
+        
+        # Iterate over rooms to find nearest non-visited room
+        for room in rooms:
+            if room not in self._rooms_visited:
+                destination_room = room
+         
+        # Find the nearest room's center
+        center = destination_room['axisAlignedBoundingBox']['center']
+
+        # Get reachable positions
+        reachable_positions = self._controller.step(action="GetReachablePositions").metadata["actionReturn"]
+        
+        # Check if the nearest room's center is reachable
+        if center in reachable_positions:
+            self._rooms_visited.append(destination_room)
+            return self._teleport(position=center)
+        else:
+            # Find the reachable position nearest to the room's center
+            nearest_reachable_position = find_nearest_reachable_position(center)
+            if nearest_reachable_position:
+                self._rooms_visited.append(destination_room)
+                return self._teleport(position=nearest_reachable_position)
+            else:
+                return self._teleport_to_nearest_new_room()
 
     def _done(self) -> None:
         """
