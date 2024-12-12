@@ -36,7 +36,7 @@ class ObjectFound(Event):
 class WrongObjectSuggested(Event):
     payload: str
     agent_info: tuple
-    agent_info: tuple
+
 
 class RoomCorrect(Event):
     payload: str
@@ -48,8 +48,7 @@ class ObjectInRoom(Event):
     payload: str
     object_id: str
     agent_info: tuple
-    object_id: str
-    agent_info: tuple
+
 
 class ObjectNotInRoom(Event):
     payload: str
@@ -297,13 +296,11 @@ class ThorFindsObject(Workflow):
         
         if object_found.get("value") == "yes":
             self.leolaniClient._save_scenario()
-            self.leolaniClient._save_scenario()
             return StopEvent(result="We found the object!")  # End the workflow
         else:
             self.leolaniClient._save_scenario()
             return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
-            self.leolaniClient._save_scenario()
-            return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
+
 
 import asyncio
 
@@ -341,22 +338,7 @@ Please write in complete sentences.
 
 Based on the completeness of your answer, I may ask follow-up questions."""
 ]
-    "Hey, there!\n\nWe are going to try to find an object together, only through text communication.",
-    """To get started, please describe what you saw in detail. 
 
-I'm interested in descriptions of:
-
-- The target object we're looking for.
-- The placement of the object within the scene.
-- Other objects in the scene, including:
-  - Their colors, shapes, textures, and sizes.
-  - Their position relative to the target object.
-- What type of room it appeared to be in:
-  - Did it look like a kitchen, bedroom, living room, bathroom, or a mix?
-
-Please write in complete sentences. 
-
-Based on the completeness of your answer, I may ask follow-up questions."""
 
     
     for message in intro_messages:
