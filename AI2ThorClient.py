@@ -24,6 +24,7 @@ from thor_utils import (
                         encode_image, 
                         get_distance,
                         closest_objects,
+                        map_detected_to_visible_objects,
                         select_objects,
                         calculate_turn_angle,
                         expand_box,
@@ -335,7 +336,7 @@ class AI2ThorClient:
         self.leolaniClient._add_action(Action.Teleport)
         self._metadata.append(self._controller.last_event.metadata)
     
-    def _find_objects_in_sight(self, object_type: str) -> list:
+    def _find_objects_in_sight(self, object_type: str = None) -> list:
         """
         Finds objects in sight.
 
@@ -351,6 +352,7 @@ class AI2ThorClient:
         """
 
         # Get objects in sight
+        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
         objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
 
         # Optionally filter by object type
