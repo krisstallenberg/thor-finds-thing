@@ -39,9 +39,6 @@ class WrongObjectSuggested(Event):
 class RoomCorrect(Event):
     payload: str
 
-class RoomIncorrect(Event):
-    payload: str
-
 class ObjectInRoom(Event):
     payload: str
 
@@ -121,7 +118,9 @@ class ThorFindsObject(Workflow):
         # Parse the structured description and generate a list of issues.
         issues = evaluate_initial_description(self.thor.structured_initial_description)
 
+        self.leolaniClient._save_scenario()
         if not issues:
+            self.thor.clarified_structured_description = self.thor.structured_initial_description
             return InitialDescriptionComplete()    
         else:
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=self.thor.structured_initial_description)
@@ -157,6 +156,7 @@ class ThorFindsObject(Workflow):
         # Check if the description is complete after clarifying questions were asked.
         issues = evaluate_initial_description(clarified_structured_description)
 
+        self.leolaniClient._save_scenario()
         if not issues:
             self.thor.clarified_structured_description = clarified_structured_description
             await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
@@ -172,23 +172,27 @@ class ThorFindsObject(Workflow):
 
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
-    async def find_correct_room_type(self, ev: InitialDescriptionComplete | RoomIncorrect | ObjectNotInRoom) -> RoomCorrect | RoomIncorrect:
-        current_description = """a living room setup viewed from behind a dark-colored couch. The room has light-colored walls and a floor that seems to be a muted, earthy tone. The main items in the room include:
-- A large, dark-colored sofa in the foreground facing a TV.
-- A television placed on a small white TV stand, positioned along the far wall.
-- A small side table with a blue vase and a decorative item beside the TV stand.
-- A wooden shelf or cabinet off to the left side of the room."""
+    async def find_correct_room_type(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> RoomCorrect | StopEvent:
+        target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
-        # Generate a structured view description from image.
-        self.thor.describe_view_from_image_structured()
-
-        # Generate and stream unstructured view description from image.
-        await self.send_message(content=self.thor.describe_view_from_image())
+        await self.send_message(content="First, I'm moving to the center of the room I am in right now") 
         
-        if random.randint(0, 1) == 0:
-            return RoomCorrect(payload="Correct room is found.")
-        else:
-            return RoomIncorrect(payload="Correct room is not found.")
+        # Teleport to the nearest unvisited center of a room.
+        while (teleport_event := await self.thor._teleport_to_nearest_new_room()) is not None:
+            
+            # # Determine whether this new room may be of the right room type.
+            # await self.send_message(content=f"We're looking for a {target_room_types}.")
+            # summary_of_360_view = "A bathtub, sink, mirror, etc." # self.thor.look_360_degrees("")
+            # await self.send_message(content=summary_of_360_view)
+            # user_inferred_room_type = await self.ask_user(content="What type of room does it sound like we're in to you?")
+            # inferred_room_type = "Bathroom" # self.thor.infer_room_type(user_inferred_room_type)
+            
+            # self.leolaniClient._save_scenario()
+            
+            # If the inferred room 
+            # if inferred_room_type in self.thor.clarified_structured_description.room_description.possible_room_types:
+            return RoomCorrect(payload=f"Entering a new room.")
+        return StopEvent(result="We've looked in every room, but we could find the object!")
 
     @cl.step(type="llm", name="step to find the object in the room")
     @step 
