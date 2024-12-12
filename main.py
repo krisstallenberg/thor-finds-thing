@@ -36,6 +36,7 @@ class ObjectFound(Event):
 class WrongObjectSuggested(Event):
     payload: str
     agent_info: tuple
+    agent_info: tuple
 
 class RoomCorrect(Event):
     payload: str
@@ -45,6 +46,8 @@ class RoomIncorrect(Event):
 
 class ObjectInRoom(Event):
     payload: str
+    object_id: str
+    agent_info: tuple
     object_id: str
     agent_info: tuple
 
@@ -245,6 +248,9 @@ class ThorFindsObject(Workflow):
         """
         # Log the current state or description of the room
         await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
+        agent_info = ev.WrongObjectSuggested.agent_info
+        if agent_info == None:
+            agent_info = [0, None, None]
         agent_info = ev.WrongObjectSuggested.agent_info
         if agent_info == None:
             agent_info = [0, None, None]

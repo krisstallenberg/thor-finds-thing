@@ -1,6 +1,7 @@
 import base64
 import numpy as np
 import io
+import math
 from pandas import DataFrame
 from descriptions import ObjectMapping
 import math
@@ -278,3 +279,51 @@ def compute_final_angle(objects, image_width):
     else:  # none found
         print("No target or described objects identified.")
         return None    
+
+
+
+def calculate_turn_and_distance_dot_product(agent_pos, agent_rotation, object_pos):
+    """
+    Calculate the turn angle and distance between an agent and an object using the dot product formula.
+    Args:
+        agent_pos (dict): The agent's position with keys 'x', 'y', 'z'.
+        agent_rotation (dict): The agent's rotation with keys 'x', 'y', 'z' (pitch, yaw, roll).
+        object_pos (dict): The object's position with keys 'x', 'y', 'z'.
+    Returns:
+        tuple: (turn_angle, distance)
+    """
+    # Extract x, y positions
+    x1, z1 = agent_pos  # Using 'z' for 2D plane (x, z)
+    x2, z2 = object_pos
+
+    # Calculate the distance
+    distance = math.sqrt((x2 - x1) ** 2 + (z2 - z1) ** 2)
+
+    # Direction vector to the object
+    dir_vector = (x2 - x1, z2 - z1)
+
+    # Agent's facing vector based on yaw
+    yaw = math.radians(agent_rotation['y'])  # Convert yaw to radians
+    agent_facing = (math.cos(yaw), math.sin(yaw))
+
+    # Dot product
+    dot_product = agent_facing[0] * dir_vector[0] + agent_facing[1] * dir_vector[1]
+
+    # Magnitude of direction vector
+    magnitude_dir = math.sqrt(dir_vector[0] ** 2 + dir_vector[1] ** 2)
+
+    # Avoid division by zero
+    if magnitude_dir == 0:
+        return 0, 0
+
+    # Calculate the angle
+    cos_theta = dot_product / magnitude_dir
+    theta = math.acos(cos_theta)  # Angle in radians
+
+    # Use cross product to determine the direction (sign of the angle)
+    cross_product = agent_facing[0] * dir_vector[1] - agent_facing[1] * dir_vector[0]
+    if cross_product < 0:
+        theta = -theta  # Negative angle for clockwise
+
+    return theta, distance
+
