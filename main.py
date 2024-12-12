@@ -230,33 +230,39 @@ import asyncio
 async def on_chat_start():
     """
     The entry point of the application.
-    
+
     Starts the ChainLit UI and initializes the LlamaIndex workflow.
-    
+
     Returns None
     """
     app = ThorFindsObject(
-        verbose=True, 
+        verbose=True,
         timeout=6000
     )  # The app times out if it runs for 6000s without any result
     cl.user_session.set("app", app)
-    
+
     # Introductory messages to be streamed
     intro_messages = [
-        "Hey, there!\n\n We are going to try to find an object together, only through text communication.",
-        "To get started, please describe what you saw in detail. Describe the object, its surroundings and what type of room it appeared to be in. Please write in complete sentences."
-    ]
-    
+    "Hey, there!\n\nWe are going to try to find an object together, only through text communication.",
+    """To get started, please describe what you saw in detail.
+
+I'm interested in descriptions of:
+
+- The target object we're looking for.
+- The placement of the object within the scene.
+- Other objects in the scene, including:
+  - Their colors, shapes, textures, and sizes.
+  - Their position relative to the target object.
+- What type of room it appeared to be in:
+  - Did it look like a kitchen, bedroom, living room, bathroom, or a mix?
+
+Please write in complete sentences.
+
+Based on the completeness of your answer, I may ask follow-up questions."""
+]
+
     for message in intro_messages:
-        # Initialize the message with an empty content for streaming
-        response_message = cl.Message(content="")
-        await response_message.send()
-        
-        for letter in message:
-            response_message.content += letter
-            await response_message.update()  
-            await asyncio.sleep(0.01) 
-        await asyncio.sleep(1) 
+        await cl.Message(message).send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
@@ -264,21 +270,13 @@ async def on_message(message: cl.Message):
     The ChainLit message handler that
     - Starts the LlamaIndex workflow
     - Streams the result letter by letter.
-    
+
     Returns None
     """
     app = cl.user_session.get("app")
     result = await app.run(initial_description=message.content)
-    
-    # Initialize the response message with an empty content
-    response_message = cl.Message(content="")
-    await response_message.send()
-    
-    # Stream the result letter by letter with delays in between
-    for letter in result:
-        response_message.content += letter
-        await response_message.update() 
-        await asyncio.sleep(0.01)
+
+    await cl.Message(content=result).send()
 
 @cl.on_chat_end
 def end():
