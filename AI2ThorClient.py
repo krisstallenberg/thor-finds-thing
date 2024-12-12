@@ -13,6 +13,7 @@ from transformers import CLIPProcessor, CLIPModel
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 import numpy as np
+import math
 import random
 import base64
 import torchvision
@@ -27,12 +28,13 @@ from thor_utils import (
                         calculate_turn_angle,
                         expand_box,
                         calculate_turn_angle,
-                        compute_final_angle
+                        compute_final_angle,
+                        calculate_turn_and_distance_dot_product
 			)
 
 # Constants
 VISIBILITY_DISTANCE = 15
-SCENE = "FloorPlan211"
+SCENE = "FloorPlan209"
 
 class AI2ThorClient: 
     """
@@ -65,8 +67,8 @@ class AI2ThorClient:
         self.unstructured_descriptions = []
         self.leolaniClient = leolaniClient
         self._llm_ollama = OllamaLlamaIndex(model="llama3.2", request_timeout=120.0)
-        self._llm_openai = OpenAILlamaIndex(model="gpt-4o-2024-08-06")
-        self._llm_openai_multimodal = OpenAI()
+        self._llm_openai = OpenAILlamaIndex(model="gpt-4o-2024-08-06" )
+        self._llm_openai_multimodal = OpenAI( )
         self._chat_mode = chat_mode
         self._workflow = workflow
         self.objects_seen = {}
@@ -76,7 +78,7 @@ class AI2ThorClient:
         self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
         self._rooms = self._find_all_rooms()
         self._rooms_visited = []
-        self.objects_seen = {}
+        self._objects_seen = {}
         self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
         self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
         self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
@@ -242,6 +244,7 @@ class AI2ThorClient:
     
         Returns None
         """
+
         self._controller.step(
             action=direction,
             degrees=30
@@ -348,11 +351,24 @@ class AI2ThorClient:
         """
 
         # Get objects in sight
-        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visibility"] == True]
+        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
 
         # Optionally filter by object type
         if object_type:
             objects_in_sight = [obj for obj in objects_in_sight if obj["objectType"] == object_type]
+
+        for obj in objects_in_sight:
+
+            # Use a unique identifier for the object (e.g., object ID or position)
+            object_id = obj["objectId"]  #  maybe no position
+    
+    
+    
+            # If the object is not already in the global dictionary, add it
+            if object_id not in self._objects_seen.keys():
+                # Add a Visited attribute with a default value of 0
+                obj["visited"] = 0
+                self._objects_seen[object_id] = obj
 
         return objects_in_sight
     
@@ -449,48 +465,11 @@ class AI2ThorClient:
         # Angle Calculation
         turn_angle = compute_final_angle(selected_objects, image_width)
 
-        return turn_angle, detections_df, selected_objects, object_role
+        return turn_angle, detections_df, selected_objects
 
-    def find_and_go_to_object(self):
-        """
-        Locate the target object and move toward it.
-        If the target is not found initially, go to the middle of the room and retry.
-        If the object is still not found, return None.
-        
-        Args:
-            targets (dict): A dictionary containing:
-                - 'target_object': {'name': str} (Target object name).
-                - 'context': [{'name': str}] (Optional described objects in the picture).
-        
-        Returns:
-            tuple: (object_id, list) where:
-                - object_id: The ID of the object the agent approached, or None if unsuccessful.
-                - list: A list of log messages generated during the process.
-        """
 
-        logs = []  # List to collect log messages
-        target_label = self.clarified_structured_description.target_object.name
-        context_objects = [object.name for object in self.clarified_structured_description.objects_in_context]
-    
-        # Step 1: Attempt to find and go to the target object
-        object_id, logs = self._attempt_to_find_and_go_to_target(target_label, context_objects, logs)
-        if object_id is None:
-            logs.append(f"Target '{target_label}' not found. Going to the middle of the room.")
-            
-            # Step 2: Go to the middle of the room
-            self._teleport(position=self._find_nearest_center_of_room())
-            logs.append("Teleported to the middle of the room.")
-        
-            # Step 3: Retry finding and going to the target object
-            object_id, logs = self._attempt_to_find_and_go_to_target(target_label, context_objects, logs)
-            if object_id is None:
-                logs.append(f"Target '{target_label}' still not found. Returning None.")
-                return None, logs  # Target not found even after retrying
-    
-        logs.append(f"Target '{target_label}' successfully reached. Object ID: {object_id}")
-        return object_id, logs  # Return the object ID and logs
 
-    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list) -> bool:
+    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list, agent_into :tuple) -> tuple:
         """
         Attempt to locate the target object and move toward it.
         If the agent cannot step, teleport closer to the target.
@@ -503,45 +482,79 @@ class AI2ThorClient:
         Returns:
             bool: True if the target object is reached, False otherwise.
         """
-        turn_angle = None  
-        count_of_turns = 0  
+        turn_angle=None
+        matched_object=None
+        count_of_turns = agent_info[0]
+        agent_rot=agent_info[2]
+        agent_pos=agent_info[1]
 
-        while turn_angle is None:
+        if agent_rot != None or agent_pos != None:
+
+            self._teleport(position=agent_pos, rotation=agent_rot, horizon=0)
+            
+
+        # Initialize agent position and rotation
+        agent_position = self._metadata[-1]['agent']['position']
+        agent_rotation = self._metadata[-1]['agent']['rotation']
+        logs.append(f'Started looking for the {target_label} in the new room!')
+        while (turn_angle is None or matched_object is None):
             image = self._get_image()  # Update the image after each rotation
-
+            
             # Define target and described objects
-            target_objects = {'target': target, 'context': context}
+            target_objects = {'target': target_label, 'context': context_objects}
+            # Find the object using metadata
+            meta_best_match, meta_turn_angle = self._find_target_angle_and_id_with_meta(target_objects['target'])
 
             # Run the workflow to find objects and calculate turn angles
-            turn_angle, detections_df, objects_selected, role = self._find_objects_and_angles(
+            turn_angle, detections_df, objects_selected = self._find_objects_and_angles(
                 image=image,
-                target_objects={'target': target_label,
-                                'context': context_objects}
+                target_objects=target_objects
             )
-            if not turn_angle:
+            visible_objects = self._find_objects_in_sight(object_type=None)
+
+            matched_object, logs = self._select_objects_by_similarity(logs, target_label, visible_objects)
+            if matched_object!= None and turn_angle != None:
+                logs.append(f'Found a possible object! Trying now to approach it.')
+
+            
+            if turn_angle is None and meta_turn_angle is not None:
+                turn_angle = meta_turn_angle
+                matched_object = meta_best_match
+                logs.append(f'Did not find the object through camera, but found one through the Metadata.')
+
+            
+            for item in self._objects_seen.values():  # Iterate over the dictionary values
+
+                if matched_object is not None and item['objectId'] == matched_object['id']:
+                    if item['visited'] == 1:
+                        turn_angle = None
+                        matched_object = None
+                        print('already seen the object')
+                        logs.append(f'The object that was found has already been found before. Continueing the search!')
+
+            if turn_angle is None and meta_turn_angle is None and matched_object != None:
+                for item in self._objects_seen.values():
+                    if item['objectId'] == matched_object['id']:
+                        item['visited'] = 1
+                logs.append('The navigation to the found object could not be calculated, but the object ID is known!')
+                return matched_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
+                        
+            if not turn_angle or not matched_object:
                 self._rotate(direction='RotateLeft')  # Rotate to search for objects
+                agent_position = self._metadata[-1]['agent']['position']
+                agent_rotation = self._metadata[-1]['agent']['rotation']
                 logs.append(f"Rotated left to search for '{target_label}'.")
                 count_of_turns += 1
 
-            if count_of_turns == 4:  # If the object is not found after 4 rotations
-                logs.append(f"Target '{target_label}' not found after 4 rotations.")
-                return False, logs  # Target not found
-        logs.append(f'{turn_angle}, turn angle found for {detections_df}')
-        # Map target label to visible objects
-        visible_objects = self._find_objects_in_sight(object_type=None)
-        matched_objects, logs = self._select_objects_by_similarity(logs, detections_df, target_label, visible_objects, similarity_threshold=0.75)
-        logs.append(f'{matched_objects} -matched objects')
-        logs.append( f'{detections_df} - detections_df')
-        logs.append( f'{objects_selected} -objects_selected')
-        if not matched_objects:
-            logs.append(f"No semantically matching objects found for target '{target_label}'.")
-            return False, logs
-        logs.append(matched_objects)
-        # Select the best object based on proximity to described objects
-        # selected_object = self._select_best_object(matched_objects, context_objects, visible_objects)
-        logs.append(f"Matched target '{target_label}' to object: {matched_objects}.")
-        selected_object=None
-        selected_object=matched_objects
+            if count_of_turns >= 3:
+                logs.append(f"Target '{target_label}' not found after 3 rotations.")
+                return False, logs, (count_of_turns, agent_position, agent_rotation)
+    
+
+
+        logs.append(f"Matched target '{target_label}' to object: {matched_object}.")
+        selected_object = matched_object
+
         # Rotate to align with the selected object
         if turn_angle > 0:
             self._rotate(direction='RotateRight', degrees=abs(turn_angle))
@@ -553,111 +566,104 @@ class AI2ThorClient:
         # Step toward the target object
         max_teleports = 10  # Prevent infinite retries
         teleport_count = 0
+        step_count = 0
+        max_steps = 20
 
         while teleport_count <= max_teleports:
-            while True:
-                # Access the agent's position
-                agent_position = self._metadata['agent']['position']
-
+            while step_count < max_steps:
+                agent_position = self._metadata[-1]['agent']['position']
                 target_position = selected_object["position"]
 
-                # Check if the target is within 3 meters
                 distance = get_distance(agent_position, target_position)
-                if distance <= 1:
+                print(f'{distance}, distance')
+
+                if distance <= 1.5:
                     logs.append(f"Target '{target_label}' is within {distance:.2f} meters. Successfully reached.")
-                    return selected_object['id'], logs  # Target successfully reached
+                    for item in self._objects_seen.values():
+                        if item['objectId'] == selected_object['id']:
+                            item['visited'] = 1
+                    return selected_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
 
-                # Try stepping toward the target
-                if not self._step():
+                self._step('MoveAhead')
+                logs.append('Stepped forward.')
+                step_count += 1
+
+                if not self._metadata[-1]['lastActionSuccess']:
                     logs.append("Step failed. Calculating closest teleportable position.")
-                    break  # Exit to handle teleportation
+                    break
 
-            # Handle teleportation if stepping fails
             teleport_position = self._calculate_closest_teleportable_position(agent_position, target_position)
             if teleport_position is None:
                 logs.append("No suitable teleportable position found.")
-                return False, logs
+                for item in self._objects_seen.values():
+                    if item['objectId'] == selected_object['id']:
+                        item['visited'] = 1
+                return selected_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
 
-            self._teleport(to=teleport_position)
+            self._teleport(position=teleport_position)
             teleport_count += 1
             logs.append(f"Teleported to {teleport_position}. Resuming movement.")
 
         logs.append("Max teleports reached. Could not reach the target.")
-        return False, logs
-
-        objects=[]
-        if type(objects_selected)==dict:
-            objects.append(objects_selected['label'])
-        else:
-            for item in objects_selected:
-                objects.append(item['label'])
-        # approach the target object
-        while True:
-            visible_objects = self._find_objects_in_sight(object_type=[objects[0]])
-            if target in visible_objects:  
-                if target in objects[0]:
-                    return True, 'target'    # Target object is in sight
-                else:
-                    return True, 'context'
-            if not self._step():
-                print("Step failed")
-                return False
+        for item in self._objects_seen.values():
+            if item['objectId'] == selected_object['id']:
+                item['visited'] = 1
+        return selected_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
 
 
-    def _map_target_to_visible_objects(self, target_label: str, visible_objects: list) -> list:
+
+    def _select_objects_by_similarity(self, logs, target_label: str, visible_objects: list, similarity_threshold=0.40) -> list:
         """
         Select the best matching visible object for the target label based on semantic similarity using embeddings.
-
+    
         Args:
-            detections_df (DataFrame): DataFrame containing detected objects. Must include 'label' column.
+            logs (list): Log messages.
             target_label (str): The target label to match.
             visible_objects (list): List of visible objects, each as a dictionary with 'objectType' and other properties.
             similarity_threshold (float): The minimum cosine similarity required to consider a match.
-
+    
         Returns:
-            str or None: The object ID of the best match if similarity meets the threshold; otherwise, None.
+            tuple: (Best match object or None, Updated logs)
         """
-        # Step 1: Find the detected object with the same label as the target label
-        matching_detections = detections_df[detections_df["label"] == target_label]
-        if matching_detections.empty:
-            return None, logs  # No matching detection found
-
-        # Step 2: Extract object types from visible objects
-        object_data = [{"id": obj["objectId"], "type": obj["objectType"], "position": obj["position"]} for obj in visible_objects]
-        object_types = [obj["type"] for obj in object_data]
-        logs.append(object_types)
-        logs.append(matching_detections)
-
-
-
-        target_embedding = self._similarity_model.encode([target_label])
-        object_embeddings = self._similarity_model.encode(object_types)
-
-        # Step 5: Compute cosine similarity between the target label and all visible object types
-        similarities = cosine_similarity(target_embedding, object_embeddings).flatten()
-        logs.append(similarities)
-        # Step 6: Find the best match that exceeds the similarity threshold
-        # best_match_index = None
-        # max_similarity = -1
-        # for i, similarity in enumerate(similarities):
-        #     if similarity > max_similarity and similarity >= similarity_threshold:
-        #         max_similarity = similarity
-        #         best_match_index = i
-        # logs.append(best_match_index)
-        # best_match_index=int(best_match_index)
-        best_match_index = np.argmax(similarities)
-        best_match_index = int(best_match_index)
-        if similarities[best_match_index] <= similarity_threshold:
-            return None, logs
-        # Step 7: Return the object ID of the best match if found
-        if best_match_index is not None:
+        try:
+            # Step 1: Extract object types and metadata from visible objects
+            object_data = [
+                {"id": obj["objectId"], "type": obj["objectType"], "position": obj["position"]}
+                for obj in visible_objects
+            ]
+            object_types = [obj["type"] for obj in object_data]
+    
+            if not object_types:
+                logs.append("No object types found in visible objects.")
+                return None, logs
+    
+            # Step 2: Encode target label and object types
+            target_embedding = self._similarity_model.encode([target_label])
+            object_embeddings = self._similarity_model.encode(object_types)
+    
+            if target_embedding.size == 0 or len(object_embeddings) == 0:
+                logs.append("Embeddings for target or objects are missing or invalid.")
+                return None, logs
+    
+            # Step 3: Compute cosine similarity between target label and object types
+            similarities = cosine_similarity(target_embedding, object_embeddings).flatten()
+    
+            # Step 4: Find the best match based on similarity
+            best_match_index = np.argmax(similarities)
+            best_similarity = similarities[best_match_index]
+    
+            if best_similarity < similarity_threshold:
+                logs.append(f"No object matches the target label '{target_label}' with sufficient similarity (Threshold: {similarity_threshold}).")
+                return None, logs
+    
+            # Step 5: Return the best match object metadata
             best_match_object = object_data[best_match_index]
-            logs.append(best_match_object)
+            logs.append(f"Best match for '{target_label}' is '{best_match_object['type']}' with similarity {best_similarity:.2f}.")
             return best_match_object, logs
-        else:
+    
+        except Exception as e:
+            logs.append(f"Error during object similarity computation: {e}")
             return None, logs
-
-
 
     
     def _calculate_relative_position(self, agent_position: dict, agent_rotation: dict, object_position: dict) -> dict:
@@ -695,33 +701,39 @@ class AI2ThorClient:
     
         return {"distance": distance, "angle": relative_angle}
     
-    
+        
     def _calculate_closest_teleportable_position(self, agent_position: dict, target_position: dict) -> dict:
         """
         Calculate the closest teleportable position along the line between the agent and the target.
     
         Args:
-            agent_position (dict): Current position of the agent (x, y, z).
-            target_position (dict): Position of the target object (x, y, z).
+            agent_position (dict): The agent's current position.
+            target_position (dict): The target's position.
     
         Returns:
             dict or None: The closest teleportable position if found, otherwise None.
         """
-        teleportable_positions = self.metadata["teleportable_positions"]
+        # Extract teleportable positions from metadata
+        teleportable_positions = self._controller.step(action="GetReachablePositions").metadata["actionReturn"]
+    
+        if not teleportable_positions:
+            raise ValueError("No teleportable positions found in the event metadata.")
     
         closest_position = None
         min_distance = float('inf')
     
-        for pos in teleportable_positions:
-            # Check if the teleportable position is on the line between agent and target
-            if self._is_on_line(agent_position, target_position, pos):
-                distance = get_distance(agent_position, pos)  # Use get_distance function
-                if distance < min_distance:
-                    closest_position = pos
-                    min_distance = distance
+        for position in teleportable_positions:
+            # Calculate Euclidean distance between the agent and each teleportable position
+            distance = math.sqrt(
+                (position["x"] - target_position["x"]) ** 2 +
+                (position["z"] - target_position["z"]) ** 2
+            )
+            if distance < min_distance:
+                min_distance = distance
+                closest_position = position
     
         return closest_position
-    
+
     
     def _is_on_line(self, agent_position: dict, target_position: dict, point: dict) -> bool:
         """
@@ -777,25 +789,32 @@ class AI2ThorClient:
         return valid_detections, image_width, image_height
 
 
+
+
     def _classify_objects(self, detections, image, target_objects, padding=5):
         """Classify detected objects using CLIP."""
         image_width, image_height = image.size
         detections_with_labels = []
-
-        if "target" not in target_objects or "context" not in target_objects:
+    
+        # Validate target_objects
+        if not isinstance(target_objects, dict) or "target" not in target_objects or "context" not in target_objects:
             raise ValueError("The 'target_objects' dictionary must contain 'target' and 'context' keys.")
-
+    
         for det in detections:
-            # Expand bounding box
-            x1, y1, x2, y2 = expand_box(
-                (det["x1"], det["y1"], det["x2"], det["y2"]),
-                image_width,
-                image_height,
-                padding,
-            )
-            cropped_image = image.crop((x1, y1, x2, y2))
-
             try:
+                # Validate detection keys
+                if not all(key in det for key in ["x1", "y1", "x2", "y2"]):
+                    raise KeyError(f"Detection is missing bounding box keys: {det}")
+                
+                # Expand bounding box
+                x1, y1, x2, y2 = expand_box(
+                    (det["x1"], det["y1"], det["x2"], det["y2"]),
+                    image_width,
+                    image_height,
+                    padding,
+                )
+                cropped_image = image.crop((x1, y1, x2, y2))
+    
                 # Preprocess for CLIP
                 inputs = self._clip_processor(
                     text=[target_objects["target"]] + target_objects["context"],
@@ -803,41 +822,93 @@ class AI2ThorClient:
                     return_tensors="pt",
                     padding=True,
                 )
-
+    
                 # Run CLIP classification
                 with torch.no_grad():
                     outputs = self._clip_model(**inputs)
                     logits_per_image = outputs.logits_per_image
                     probs = logits_per_image.softmax(dim=1).squeeze(0)
-
+    
                 # Assign label
                 labels = [target_objects["target"]] + target_objects["context"]
                 max_prob_idx = torch.argmax(probs).item()
                 detected_label = labels[max_prob_idx]
                 confidence = probs[max_prob_idx].item()
-
-                # Append result
-                object_center_x = (x1 + x2) / 2
-                detections_with_labels.append({
-                    "label": detected_label,
-                    "confidence": confidence,
-                    "center_x": object_center_x,
-                    "box": (x1, y1, x2, y2)
-                })
+    
+                # Append result if label matches target_label
+                if detected_label == target_objects["target"]:
+                    object_center_x = (x1 + x2) / 2
+                    detections_with_labels.append({
+                        "label": detected_label,
+                        "confidence": confidence,
+                        "center_x": object_center_x,
+                        "box": (x1, y1, x2, y2)
+                    })
             except Exception as e:
-                print(f"Error during CLIP classification: {e}")
+                print(f"Error during object classification: {e}")
                 continue
-
-        # Debugging: Print detections_with_labels
-        print("Detections with labels:", detections_with_labels)
-
-        # Create DataFrame
+ 
         try:
             detections_df = pd.DataFrame(detections_with_labels)
             if detections_df.empty or "label" not in detections_df.columns:
-                return detections_df
+                return pd.DataFrame()  # Return an empty DataFrame
         except Exception as e:
             print(f"Error creating DataFrame: {e}")
-            raise
-        detections_df = pd.DataFrame(detections_with_labels)
+            return pd.DataFrame()  # Return an empty DataFrame
+    
         return detections_df
+
+
+    
+    def _find_target_angle_and_id_with_meta(self, target_name):
+        """
+        Finds the best-matching object based on semantic similarity and calculates the turn angle.
+    
+        Args:
+            target_name (str): Name of the target object.
+    
+        Returns:
+            tuple: (best_matching_object_id, turn_angle)
+        """
+        # Step 1: Get visible objects
+        visible_objects = self._find_objects_in_sight(object_type=None)  
+
+        # Step 2: Find the floor object and extract receptacle object IDs
+        floor_object = next((obj for obj in visible_objects if obj['objectType'] == 'Floor'), None)
+        if not floor_object or 'receptacleObjectIds' not in floor_object:
+            return None, None
+    
+        receptacle_ids = floor_object['receptacleObjectIds']
+    
+        # Step 3: Filter visible objects to those whose IDs match receptacle IDs
+        filtered_objects = [obj for obj in visible_objects if obj['objectId'] in receptacle_ids]
+        logs=[]
+
+
+        best_match, logs = self._select_objects_by_similarity( logs, target_name, filtered_objects)
+
+    
+        if not best_match:
+            return None, None
+    
+        # Extract position of the best match
+        object_position = best_match['position']  
+    
+        # Step 5: Get agent's position and rotation 
+        agent_position = self._metadata[-1]['agent']['position'] 
+        agent_rotation = self._metadata[-1]['agent']['rotation']  
+        print(agent_position)
+        print(agent_rotation)
+        # Step 6: Calculate turn angle and distance 
+        turn_angle, _ = calculate_turn_and_distance_dot_product(
+            (agent_position['x'], agent_position['z']),  # Use x and z for 2D position
+            agent_rotation,
+            (object_position['x'], object_position['z'])
+        )
+    
+        # Transform the turn angle into a single float value 
+        turn_angle_float = turn_angle
+    
+        # Step 7: Return the object ID and turn angle
+        return best_match, turn_angle_float
+    
