@@ -25,6 +25,7 @@ import time
 from thor_utils import ( 
                         encode_image, 
                         get_distance,
+                        closest_objects,
                         map_detected_to_visible_objects,
                         select_objects,
                         expand_box,
@@ -347,6 +348,7 @@ class AI2ThorClient:
         """
 
         # Get objects in sight
+        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
         objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
 
         # Optionally filter by object type
