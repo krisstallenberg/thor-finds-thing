@@ -25,10 +25,8 @@ import time
 from thor_utils import ( 
                         encode_image, 
                         get_distance,
-                        closest_objects,
                         map_detected_to_visible_objects,
                         select_objects,
-                        calculate_turn_angle,
                         expand_box,
                         calculate_turn_angle,
                         compute_final_angle,
@@ -74,13 +72,6 @@ class AI2ThorClient:
         self._llm_openai_multimodal = OpenAI( )
         self._chat_mode = chat_mode
         self._workflow = workflow
-        self.objects_seen = {}
-        self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
-        self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
-        self._clip_processor = clip_processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
-        self._similarity_model = SentenceTransformer('all-MiniLM-L6-v2')
-        self._rooms = self._find_all_rooms()
-        self._rooms_visited = []
         self._objects_seen = {}
         self._clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").eval()
         self._frcnn_model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True).eval()
@@ -337,6 +328,7 @@ class AI2ThorClient:
 
         self.leolaniClient._add_action(Action.Teleport)
         self._metadata.append(self._controller.last_event.metadata)
+        return self._controller.last_event.metadata['lastActionSuccess']
     
     def _find_objects_in_sight(self, object_type: str = None) -> list:
         """
@@ -354,7 +346,6 @@ class AI2ThorClient:
         """
 
         # Get objects in sight
-        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
         objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
 
         # Optionally filter by object type
@@ -402,7 +393,7 @@ class AI2ThorClient:
         """
         pass    
 
-    def _teleport_to_nearest_new_room(self) -> str:
+    async def _teleport_to_nearest_new_room(self) -> str:
         """
         Teleports the agent to the center of the nearest room if reachable.
         If not, teleports to the nearest reachable position to the center.
@@ -411,32 +402,49 @@ class AI2ThorClient:
         -------
         str
             The `objectId` of the room teleported to.
-        """
+        """      
+        # Find all rooms
         rooms = self._find_all_rooms()
+        
+        # Initialize destination_room with None
+        destination_room = None
+        
+        # Handle single room scenes
+        if len(rooms) == 1 and rooms[0]['objectId'] in self._rooms_visited:
+            await self._workflow.send_message(content=f"I've looked in all rooms now...")
+            return False
+        
+        # Communicate what's happening to the user
+        if self._rooms_visited == []:
+            await self._workflow.send_message(content=f"I'm going to the center of the current room.")
+        else:
+            await self._workflow.send_message(content=f"I'm going to look for a room I haven't visited yet.")
         
         # Iterate over rooms to find nearest non-visited room
         for room in rooms:
-            if room not in self._rooms_visited:
+            if room['objectId'] not in self._rooms_visited:
                 destination_room = room
+                break
+
+        # If no room is found, all rooms have been visited
+        if destination_room is None:
+            await self._workflow.send_message(content=f"I've looked in all rooms now...")
+            return False
+        elif self._rooms_visited != []:
+            await self._workflow.send_message(content=f"I found a new room. I'm going there right now.")
+
+        # Append the nearest non-visited room to rooms_visited
+        self._rooms_visited.append(destination_room['objectId'])
          
-        # Find the nearest room's center
+        # Find the nearest non-visited room's center
         center = destination_room['axisAlignedBoundingBox']['center']
 
-        # Get reachable positions
+        # Get globally reachable positions
         reachable_positions = self._controller.step(action="GetReachablePositions").metadata["actionReturn"]
         
-        # Check if the nearest room's center is reachable
-        if center in reachable_positions:
-            self._rooms_visited.append(destination_room)
-            return self._teleport(position=center)
-        else:
-            # Find the reachable position nearest to the room's center
-            nearest_reachable_position = find_nearest_reachable_position(center)
-            if nearest_reachable_position:
-                self._rooms_visited.append(destination_room)
-                return self._teleport(position=nearest_reachable_position)
-            else:
-                return self._teleport_to_nearest_new_room()
+        # Teleport as close to the center of the nearest non-visited room as possible
+        closest_reachable_position = find_closest_position(reachable_positions, center)
+        return self._teleport(position=closest_reachable_position)
 
     def _done(self) -> None:
         """

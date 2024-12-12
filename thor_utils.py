@@ -4,7 +4,6 @@ import io
 import math
 from pandas import DataFrame
 from descriptions import ObjectMapping
-import math
 
 def encode_image(image):
 
@@ -35,26 +34,28 @@ def get_distance(coord1, coord2):
                         + (coord2['z'] - coord1['z'])**2)
         return distance
     
-def closest_objects(objectId, objects, num: int = 1):
+def find_closest_position(reachable_positions, target_position):
     """
-    Find the closest object(s) to the given object.
-    
+    Find the closest reachable position to the target position.
+
     Parameters
     ----------
-    objectId : str
-        The ID of the object to find the closest object(s) to.
-    objects : list
-        The list of objects to search through.
-    num : int, optional
-        The number of closest objects to return. Default is 1.
-        
+    reachable_positions : list of dict
+        A list of dictionaries containing 'x', 'y', 'z' coordinates of reachable positions.
+    target_position : dict
+        A dictionary containing 'x', 'y', 'z' coordinates of the target position.
+
     Returns
     -------
-    list of dict
-        A list of the closest object(s) to the given object.
+    dict
+        The dictionary of the closest reachable position.
     """
+    if not reachable_positions:
+        raise ValueError("The list of reachable positions is empty.")
     
-
+    closest_position = min(reachable_positions, key=lambda pos: get_distance(pos, target_position))
+    return closest_position   
+    
 def select_objects(detections_df, target_objects):
     """
     Select the target object that is closest to the center of the context objects.
@@ -170,9 +171,6 @@ def calculate_turn_and_distance_dot_product(agent_pos, agent_rotation, object_po
         theta = -theta  # Negative angle for clockwise
 
     return theta, distance
-
-
-    pass
     
 def map_detected_to_visible_objects(detected_objects, visible_objects: list, openai_client) -> dict:
     detected_labels = detected_objects['label'].tolist()
@@ -208,7 +206,7 @@ Respond with an object mapping the user-defined object names as keys to lists of
     )
     name_mapping = response.choices[0].message.parsed
     name_mapping_dict = {obj.user_defined_name: obj.objectIds for obj in name_mapping.mapping}
-        
+    
     return name_mapping_dict
 
 def select_objects(detections_df, target_objects):
@@ -326,4 +324,3 @@ def calculate_turn_and_distance_dot_product(agent_pos, agent_rotation, object_po
         theta = -theta  # Negative angle for clockwise
 
     return theta, distance
-
