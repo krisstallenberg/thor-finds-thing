@@ -220,7 +220,10 @@ class ThorFindsObject(Workflow):
     @cl.step(type="llm" , name="step to suggest an object")
     @step 
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
-        
+
+        # Describe suggested object from the image
+        self.thor.describe_suggested_object()
+
         actions = [
         cl.Action(name="Yes", value="example_value", description="The identifier matches the one of the target object."),
         ]
@@ -239,7 +242,7 @@ class ThorFindsObject(Workflow):
             return StopEvent(result="We found the object!")  # End the workflow
         else:
             self.leolaniClient._save_scenario()
-            return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
+            return WrongObjectSuggested(payload="Couldn't find object in this room.", send_back=(ev.turn_number, ev.rotation, ev.position)) # Send back for new navigation
 
 import asyncio
 
