@@ -33,6 +33,28 @@ def get_distance(coord1, coord2):
                         + (coord2['z'] - coord1['z'])**2)
         return distance
     
+def find_closest_position(reachable_positions, target_position):
+    """
+    Find the closest reachable position to the target position.
+
+    Parameters
+    ----------
+    reachable_positions : list of dict
+        A list of dictionaries containing 'x', 'y', 'z' coordinates of reachable positions.
+    target_position : dict
+        A dictionary containing 'x', 'y', 'z' coordinates of the target position.
+
+    Returns
+    -------
+    dict
+        The dictionary of the closest reachable position.
+    """
+    if not reachable_positions:
+        raise ValueError("The list of reachable positions is empty.")
+    
+    closest_position = min(reachable_positions, key=lambda pos: get_distance(pos, target_position))
+    return closest_position
+    
 def closest_objects(objectId, objects, num: int = 1):
     """
     Find the closest object(s) to the given object.

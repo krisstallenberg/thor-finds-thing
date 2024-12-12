@@ -39,9 +39,6 @@ class WrongObjectSuggested(Event):
 class RoomCorrect(Event):
     payload: str
 
-class RoomIncorrect(Event):
-    payload: str
-
 class ObjectInRoom(Event):
     payload: str
     turns_done: int
@@ -124,6 +121,7 @@ class ThorFindsObject(Workflow):
 
         self.leolaniClient._save_scenario()
         if not issues:
+            self.thor.clarified_structured_description = self.thor.structured_initial_description
             return InitialDescriptionComplete()    
         else:
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=self.thor.structured_initial_description)
@@ -159,6 +157,7 @@ class ThorFindsObject(Workflow):
         # Check if the description is complete after clarifying questions were asked.
         issues = evaluate_initial_description(clarified_structured_description)
 
+        self.leolaniClient._save_scenario()
         if not issues:
             self.thor.clarified_structured_description = clarified_structured_description
             await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
@@ -176,36 +175,16 @@ class ThorFindsObject(Workflow):
 
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
-    async def find_correct_room_type(self, ev: InitialDescriptionComplete | RoomIncorrect | ObjectNotInRoom) -> RoomCorrect | RoomIncorrect:
+    async def find_correct_room_type(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> RoomCorrect | StopEvent:
         target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
-        # Generate a structured view description from image.
-        self.thor.describe_view_from_image_structured()
-
-        # Generate and display unstructured view description from image.
-        await self.send_message(content=self.thor.describe_view_from_image())
-        
-        # Teleport to center of current room.
-        if self.thor._teleport_to_nearest_new_room():
-            await self.send_message(content="I've moved to the center of the current room.")
-            
-            # Describe the current view to the user
-            await self.send_message(content=self.thor.describe_view_from_image())
-            
-            # Infer the room type of the current room and communicate to user
-            room_type = self.thor.infer_room_type()
-            await self.send_message(content=f"Based on what I see, I think this room is of type {room_type}")
-            await self.send_message(content=f"We're looking for a {target_room_types}")
-            
-            # Decide (with user) whether to look for the object in current room
-            await self.ask_user(content=f"Should we look for the object in the current room?") 
-        
-        if random.randint(0, 1) == 0:
+        # Teleport to the nearest unvisited center of a room.
+        if await self.thor._teleport_to_nearest_new_room():
             self.leolaniClient._save_scenario()
-            return RoomCorrect(payload="Correct room is found.")
+            return RoomCorrect(payload=f"Entering a new room.")
         else:
             self.leolaniClient._save_scenario()
-            return RoomIncorrect(payload="Correct room is not found.")
+            return StopEvent(result="We've looked in every room, but we could find the object!")
 
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
