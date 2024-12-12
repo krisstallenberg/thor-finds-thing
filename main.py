@@ -231,7 +231,7 @@ class ThorFindsObject(Workflow):
             self.leolaniClient._save_scenario()
             return RoomIncorrect(payload="Correct room is not found.")
 
-    @cl.step(type="llm", name="step to find the object in the current room")
+
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
     async def find_object_in_room(self, ev: RoomCorrect | RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
@@ -278,8 +278,7 @@ class ThorFindsObject(Workflow):
             return ObjectNotInRoom(payload="Object is not in this room.")
     
     @cl.step(type="llm" , name="step to suggest an object")
-    @step 
-    async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
+    @step
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
         
         actions = [
@@ -294,7 +293,7 @@ class ThorFindsObject(Workflow):
             ],
             timeout=INT_MAX
         )
-        )
+        
         
         if object_found.get("value") == "yes":
             self.leolaniClient._save_scenario()
@@ -358,7 +357,7 @@ I'm interested in descriptions of:
 Please write in complete sentences. 
 
 Based on the completeness of your answer, I may ask follow-up questions."""
-]
+
     
     for message in intro_messages:
         await cl.Message(message).send()
