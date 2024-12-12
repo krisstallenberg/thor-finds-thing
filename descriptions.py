@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import List, Literal, Optional
+from pydantic import BaseModel, Field, RootModel
+from typing import List, Dict, Literal, Optional
 
 # Models for describing views
 
@@ -39,3 +39,13 @@ class ClarifyingQuestion(BaseModel):
 
 class ListOfClarifyingQuestions(BaseModel):
     questions: List[ClarifyingQuestion]
+    
+# Model to map object descriptions to objectIds
+
+class ObjectMap(BaseModel):
+    user_defined_name: str
+    objectIds: List[str]
+
+class ObjectMapping(BaseModel):
+    mapping: List[ObjectMap]
+    
