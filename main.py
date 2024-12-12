@@ -175,24 +175,13 @@ class ThorFindsObject(Workflow):
     async def find_correct_room_type(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> RoomCorrect | StopEvent:
         target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
-        await self.send_message(content="First, I'm moving to the center of the room I am in right now") 
-        
         # Teleport to the nearest unvisited center of a room.
-        while (teleport_event := await self.thor._teleport_to_nearest_new_room()) is not None:
-            
-            # # Determine whether this new room may be of the right room type.
-            # await self.send_message(content=f"We're looking for a {target_room_types}.")
-            # summary_of_360_view = "A bathtub, sink, mirror, etc." # self.thor.look_360_degrees("")
-            # await self.send_message(content=summary_of_360_view)
-            # user_inferred_room_type = await self.ask_user(content="What type of room does it sound like we're in to you?")
-            # inferred_room_type = "Bathroom" # self.thor.infer_room_type(user_inferred_room_type)
-            
-            # self.leolaniClient._save_scenario()
-            
-            # If the inferred room 
-            # if inferred_room_type in self.thor.clarified_structured_description.room_description.possible_room_types:
+        if await self.thor._teleport_to_nearest_new_room():
+            self.leolaniClient._save_scenario()
             return RoomCorrect(payload=f"Entering a new room.")
-        return StopEvent(result="We've looked in every room, but we could find the object!")
+        else:
+            self.leolaniClient._save_scenario()
+            return StopEvent(result="We've looked in every room, but we could find the object!")
 
     @cl.step(type="llm", name="step to find the object in the room")
     @step 

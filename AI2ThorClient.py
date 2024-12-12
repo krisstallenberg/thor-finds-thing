@@ -375,27 +375,41 @@ class AI2ThorClient:
         # Initialize destination_room with None
         destination_room = None
         
+        # Handle single room scenes
+        if len(rooms) == 1 and rooms[0]['objectId'] in self._rooms_visited:
+            await self._workflow.send_message(content=f"I've looked in all rooms now...")
+            return False
+        
+        # Communicate what's happening to the user
+        if self._rooms_visited == []:
+            await self._workflow.send_message(content=f"I'm going to the center of the current room.")
+        else:
+            await self._workflow.send_message(content=f"I'm going to look for a room I haven't visited yet.")
+        
         # Iterate over rooms to find nearest non-visited room
         for room in rooms:
-            if room not in self._rooms_visited:
-                await self._workflow.send_message(content=f"We haven't tried this room yet.")
+            if room['objectId'] not in self._rooms_visited:
                 destination_room = room
-                
+                break
+
+        # If no room is found, all rooms have been visited
         if destination_room is None:
+            await self._workflow.send_message(content=f"I've looked in all rooms now...")
             return False
+        elif self._rooms_visited != []:
+            await self._workflow.send_message(content=f"I found a new room. I'm going there right now.")
+
+        # Append the nearest non-visited room to rooms_visited
+        self._rooms_visited.append(destination_room['objectId'])
          
         # Find the nearest non-visited room's center
         center = destination_room['axisAlignedBoundingBox']['center']
-        await self._workflow.send_message(content=f"The center of the nearest new room is {center}")
 
         # Get globally reachable positions
         reachable_positions = self._controller.step(action="GetReachablePositions").metadata["actionReturn"]
-        await self._workflow.send_message(content=f"The reachable positions are {reachable_positions}")
         
         # Teleport as close to the center of the nearest non-visited room as possible
         closest_reachable_position = find_closest_position(reachable_positions, center)
-        await self._workflow.send_message(content=f"The most central reachable position is {closest_reachable_position}")
-        self._rooms_visited.append(destination_room)
         return self._teleport(position=closest_reachable_position)
 
     def _done(self) -> None:
