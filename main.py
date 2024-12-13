@@ -8,6 +8,7 @@ from llama_index.core.workflow import (
     Context
 )
 import json
+import asyncio
 import random
 from AI2ThorClient import AI2ThorClient
 from descriptions import InitialDescription, ViewDescription
@@ -42,10 +43,8 @@ class RoomCorrect(Event):
     payload: str
 
 class ObjectInRoom(Event):
-    payload: str
     object_id: str
     agent_info: tuple
-
 
 class ObjectNotInRoom(Event):
     payload: str
@@ -192,7 +191,7 @@ class ThorFindsObject(Workflow):
 
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
-    async def find_object_in_room(self, ev: RoomCorrect | RoomCorrect) -> ObjectInRoom | ObjectNotInRoom:
+    async def find_object_in_room(self, ev: RoomCorrect ) -> ObjectInRoom | ObjectNotInRoom:
 
         """
         Attempts to locate the object in the room.
@@ -229,39 +228,46 @@ class ThorFindsObject(Workflow):
                 await cl.Message(content=log).send()
             
             # Return the ObjectInRoom event
-            return ObjectInRoom(payload=f"Object found! Identifier",object_id = obj_id, agent_info = agent_info )
+            return ObjectInRoom(object_id = obj_id, agent_info = agent_info)
         
         else:
             self.leolaniClient._save_scenario()
             return ObjectNotInRoom(payload="Object is not in this room.")
     
     @cl.step(type="llm" , name="step to suggest an object")
-    @step
+    @step 
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
+
+        # Describe suggested object from the image
+        description = self.thor.describe_suggested_object()
         
-        actions = [
-        cl.Action(name="Yes", value="example_value", description="The identifier matches the one of the target object."),
-        ]
+        self.send_message(content=f"Here's what I see: {description}")
         
-        object_found = await self.ask_user( 
-            content="Does the target object have identifier {} ?".format(random.randint(1000, 9999)),
+        description_matches = await cl.AskActionMessage( 
+            content="Does the description match the object you're looking for?".format(random.randint(1000, 9999)),
             actions=[
                 cl.Action(name="Yes", value="yes", label="✅ Yes"),
                 cl.Action(name="No", value="no", label="❌ No"),
             ],
             timeout=INT_MAX
-        )
+        ).send()      
         
-        
-        if object_found.get("value") == "yes":
-            self.leolaniClient._save_scenario()
-            return StopEvent(result="We found the object!")  # End the workflow
-        else:
-            self.leolaniClient._save_scenario()
-            return WrongObjectSuggested(payload="Couldn't find object in this room.", turn_done=ev.turns_done)
+        if description_matches.get("value") == "yes":
+            object_found = await cl.AskActionMessage( 
+                content=f"Does the target object have identifier {ev.object_id}?"),
+                actions=[
+                    cl.Action(name="Yes", value="yes", label="✅ Yes"),
+                    cl.Action(name="No", value="no", label="❌ No"),
+                ],
+                timeout=INT_MAX
+            ).send()
 
-
-import asyncio
+            if object_found.get("value") == "yes":
+                self.leolaniClient._save_scenario()
+                return StopEvent(result="We found the object!")  # End the workflow
+            else:
+                self.leolaniClient._save_scenario()
+                return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ev.agent_info) # Send back for new navigation
 
 @cl.on_chat_start
 async def on_chat_start():
@@ -312,7 +318,6 @@ async def on_message(message: cl.Message):
     """
     app = cl.user_session.get("app")
     result = await app.run(initial_description=message.content)
-
     await cl.Message(content=result).send()
 
 @cl.on_chat_end
