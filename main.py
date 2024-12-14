@@ -191,7 +191,7 @@ class ThorFindsObject(Workflow):
 
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
-    async def find_object_in_room(self, ev: RoomCorrect ) -> ObjectInRoom | ObjectNotInRoom:
+    async def find_object_in_room(self, ev: RoomCorrect | WrongObjectSuggested) -> ObjectInRoom | ObjectNotInRoom:
 
         """
         Attempts to locate the object in the room.
@@ -205,12 +205,19 @@ class ThorFindsObject(Workflow):
         """
         # Log the current state or description of the room
         await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
-        agent_info = ev.WrongObjectSuggested.agent_info
-        if agent_info == None:
+        agent_info = [0, None, None]
+
+        # Determine agent_info based on event type
+        if isinstance(ev, RoomCorrect):
             agent_info = [0, None, None]
-        agent_info = ev.WrongObjectSuggested.agent_info
-        if agent_info == None:
-            agent_info = [0, None, None]
+            self.send_message(content=f'New room agent info is {agent_info}')
+        elif isinstance(ev, WrongObjectSuggested):  # Fixed typo
+            if hasattr(ev, 'agent_info'):  # Ensure ev has agent_info attribute
+                agent_info = ev.agent_info
+                self.send_message(content=f'It was a wrong object selected, the agent info is {agent_info}')
+            else:
+                self.send_message(content='Event does not contain agent_info. Using default.')
+
         # Use the AI2ThorClient to search for the object
         if agent_info[0] == 3:
             self.leolaniClient._save_scenario()
@@ -218,10 +225,13 @@ class ThorFindsObject(Workflow):
 
         logs=[]
         target = self.thor.clarified_structured_description.target_object.name
-        context = [object.name for object in self.clarified_structured_description.objects]
+        context = [object.name for object in self.thor.clarified_structured_description.objects_in_context]
         obj_id, logs, agent_info = self.thor._attempt_to_find_and_go_to_target(logs, target, context, agent_info )
 
+        self.send_message(content=obj_id)
 
+        for log in logs:
+            self.send_message(content=log)
         if obj_id:  
 
             for log in logs:
@@ -252,22 +262,12 @@ class ThorFindsObject(Workflow):
             timeout=INT_MAX
         ).send()      
         
-        if description_matches.get("value") == "yes":
-            object_found = await cl.AskActionMessage( 
-                content=f"Does the target object have identifier {ev.object_id}?"),
-                actions=[
-                    cl.Action(name="Yes", value="yes", label="✅ Yes"),
-                    cl.Action(name="No", value="no", label="❌ No"),
-                ],
-                timeout=INT_MAX
-            ).send()
-
-            if object_found.get("value") == "yes":
-                self.leolaniClient._save_scenario()
-                return StopEvent(result="We found the object!")  # End the workflow
-            else:
-                self.leolaniClient._save_scenario()
-                return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ev.agent_info) # Send back for new navigation
+        if object_found.get("value") == "yes":
+            self.leolaniClient._save_scenario()
+            return StopEvent(result="We found the object!")  # End the workflow
+        else:
+            self.leolaniClient._save_scenario()
+            return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ev.agent_info)
 
 @cl.on_chat_start
 async def on_chat_start():

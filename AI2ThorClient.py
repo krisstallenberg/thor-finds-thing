@@ -30,7 +30,8 @@ from thor_utils import (
                         expand_box,
                         calculate_turn_angle,
                         compute_final_angle,
-                        calculate_turn_and_distance_dot_product
+                        calculate_turn_and_distance_dot_product,
+                        find_closest_position
 			)
 
 # Constants
@@ -527,7 +528,7 @@ class AI2ThorClient:
 
 
 
-    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list, agent_into :tuple) -> tuple:
+    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list, agent_info :tuple) -> tuple:
         """
         Attempt to locate the target object and move toward it.
         If the agent cannot step, teleport closer to the target.
