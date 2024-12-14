@@ -8,6 +8,7 @@ class ObjectDescription(BaseModel):
     position: Optional[str]
     size: Optional[str]
     texture: Optional[str]
+    material: Optional[str]
     color: Optional[str]
     additional_information: Optional[List[str]]
     

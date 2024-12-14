@@ -2,7 +2,7 @@ from ai2thor.controller import Controller
 from PIL import Image
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
-from descriptions import InitialDescription, ViewDescription
+from descriptions import InitialDescription, ViewDescription, ObjectDescription
 from leolani_client import Action
 from openai import OpenAI
 import pandas as pd
@@ -446,6 +446,52 @@ class AI2ThorClient:
         # Teleport as close to the center of the nearest non-visited room as possible
         closest_reachable_position = find_closest_position(reachable_positions, center)
         return self._teleport(position=closest_reachable_position)
+
+    def _describe_suggested_object(self, object_ID: str, (turn_number, rotation, position)):
+        
+        """
+        Describes the suggested object to the user using an LLM-generated description.
+        
+        Parameters
+        ----------
+        object_image : 
+            Image of the object to be described.
+        
+        object_ID : str
+            The unique identifier of the object to be described.
+        
+        Returns:
+        -------
+        ViewDescription
+            A structured description of the suggested object.
+        """
+
+        encoded_image = encode_image(self._get_image())
+        object_type = object_ID.split('|')[0]
+        
+        response = self._llm_openai_multimodal.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"Describe the {object_type.lower()} as if you are observing it closely for the first time. Start by introducing the {object_type.lower()} and its position in the setting, such as 'I have found a painting hanging on the wall to the left of a door,' or use a similar statement to set the scene. Continue by describing its size, texture, material, and color in detail. Highlight any distinctive features, like patterns or decorations. Be precise and thorough in your description.",
+                        },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url":  f"data:image/jpeg;base64,{encoded_image}"
+                            },
+                        },
+                    ],
+                },
+            ],
+            response_format=ObjectDescription,
+        )
+        self.descriptions.append(response.choices[0].message.parsed)
+        return response.choices[0].message.parsed
 
     def _done(self) -> None:
         """
