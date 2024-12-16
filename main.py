@@ -12,7 +12,7 @@ import asyncio
 import random
 from AI2ThorClient import AI2ThorClient
 from descriptions import InitialDescription, ViewDescription
-from workflow_utils import evaluate_initial_description, generate_questions, populate_initial_description
+from workflow_utils import evaluate_initial_description, generate_clarifying_questions, update_structured_description
 from openai import OpenAI
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
@@ -158,7 +158,7 @@ class ThorFindsObject(Workflow):
         await self.send_message(content="Before we move on, I want to ask a few more questions about what you saw. The description is incomplete because:\n- " + "\n- ".join([issue for issue, relates_to in ev.issues_with_description]) + "\n\n Once I've gathered this minimal information, let's move on to find the object.")
 
         # Generate clarifying questions from the list of issues.
-        questions = await generate_questions(issues=ev.issues_with_description, 
+        questions = await generate_clarifying_questions(issues=ev.issues_with_description, 
                                              openai_client=self.thor._llm_openai_multimodal, 
                                              structured_description=json.dumps(ev.structured_description, indent=4, default=str)
                                              )
@@ -174,7 +174,7 @@ class ThorFindsObject(Workflow):
             })
         
         # Populate the initial description using answers to the clarifying questions.
-        clarified_structured_description = populate_initial_description(structured_description=ev.structured_description,
+        clarified_structured_description = update_structured_description(structured_description=ev.structured_description,
                                      openai_client=self.thor._llm_openai_multimodal,
                                      unstructured_description=self.thor.initial_description,
                                      question_answer_pairs=clarifying_questions_answers)
