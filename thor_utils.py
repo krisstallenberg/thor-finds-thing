@@ -1,8 +1,6 @@
 import base64
 import numpy as np
 import io
-from pandas import DataFrame
-from descriptions import ObjectMapping
 import math
 from pandas import DataFrame
 from descriptions import ObjectMapping

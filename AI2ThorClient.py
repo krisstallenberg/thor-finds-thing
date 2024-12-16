@@ -348,7 +348,6 @@ class AI2ThorClient:
 
         # Get objects in sight
         objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
-        objects_in_sight = [obj for obj in self._controller.last_event.metadata["objects"] if obj["visible"] == True]
 
         # Optionally filter by object type
         if object_type:

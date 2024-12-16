@@ -295,15 +295,7 @@ Based on the completeness of your answer, I may ask follow-up questions."""
 ]
 
     for message in intro_messages:
-        # Initialize the message with an empty content for streaming
-        response_message = cl.Message(content="")
-        await response_message.send()
-        
-        for letter in message:
-            response_message.content += letter
-            await response_message.update()  
-            await asyncio.sleep(0.01) 
-        await asyncio.sleep(1) 
+        await cl.Message(message).send()
 
 @cl.on_message
 async def on_message(message: cl.Message):
