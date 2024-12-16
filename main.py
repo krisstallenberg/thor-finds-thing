@@ -175,7 +175,6 @@ class ThorFindsObject(Workflow):
             self.leolaniClient._save_scenario()
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
 
-
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
     async def find_correct_room_type(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> RoomCorrect | StopEvent:
@@ -249,12 +248,12 @@ class ThorFindsObject(Workflow):
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
 
         # Describe suggested object from the image
-        description = self.thor.describe_suggested_object()
+        description = self.thor.describe_suggested_object(obj_id=ev.obj_id, agent_info=ev.agent_info)
         
         self.send_message(content=f"Here's what I see: {description}")
         
         description_matches = await cl.AskActionMessage( 
-            content="Does the description match the object you're looking for?".format(random.randint(1000, 9999)),
+            content="Does the description match the object you're looking for?",
             actions=[
                 cl.Action(name="Yes", value="yes", label="✅ Yes"),
                 cl.Action(name="No", value="no", label="❌ No"),
@@ -262,12 +261,23 @@ class ThorFindsObject(Workflow):
             timeout=INT_MAX
         ).send()      
         
-        if object_found.get("value") == "yes":
-            self.leolaniClient._save_scenario()
-            return StopEvent(result="We found the object!")  # End the workflow
-        else:
-            self.leolaniClient._save_scenario()
-            return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ev.agent_info)
+        if description_matches.get("value") == "yes":
+            object_found = await cl.AskActionMessage( 
+                content=f"Does the target object have identifier {ev.object_id}?",
+                actions=[
+                    cl.Action(name="Yes", value="yes", label="✅ Yes"),
+                    cl.Action(name="No", value="no", label="❌ No"),
+                ],
+                timeout=INT_MAX
+            ).send()
+
+            if object_found.get("value") == "yes":
+                self.leolaniClient._save_scenario()
+                return StopEvent(result="We found the object!")  # End the workflow
+            else:
+                self.leolaniClient._save_scenario()
+                return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ev.agent_info) # Send back for new navigation
+                
 
 @cl.on_chat_start
 async def on_chat_start():

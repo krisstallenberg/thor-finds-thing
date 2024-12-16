@@ -447,7 +447,7 @@ class AI2ThorClient:
         closest_reachable_position = find_closest_position(reachable_positions, center)
         return self._teleport(position=closest_reachable_position)
 
-    def _describe_suggested_object(self, object_ID: str, turn_number, rotation, position):
+    def _describe_suggested_object(self, obj_ID: str, agent_info: tuple):
         
         """
         Describes the suggested object to the user using an LLM-generated description.
@@ -462,8 +462,8 @@ class AI2ThorClient:
         
         Returns:
         -------
-        ViewDescription
-            A structured description of the suggested object.
+            str
+            A string describing the suggested object.
         """
 
         encoded_image = encode_image(self._get_image())
@@ -488,9 +488,7 @@ class AI2ThorClient:
                     ],
                 },
             ],
-            response_format=ObjectDescription,
         )
-        self.descriptions.append(response.choices[0].message.parsed)
         return response.choices[0].message.parsed
 
     def _done(self) -> None:
