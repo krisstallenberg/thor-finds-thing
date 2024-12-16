@@ -448,7 +448,9 @@ class AI2ThorClient:
         closest_reachable_position = find_closest_position(reachable_positions, center)
         return self._teleport(position=closest_reachable_position)
 
-    def _describe_suggested_object(self, object_ID: str, agent_info):
+
+    def _describe_suggested_object(self, object_ID: str, turn_number, rotation, position):
+
         
         """
         Describes the suggested object to the user using an LLM-generated description.

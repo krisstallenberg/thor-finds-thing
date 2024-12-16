@@ -197,6 +197,8 @@ Respond with an object mapping the user-defined object names as keys to lists of
     {user_defined_name: "Couch", objectIds: ["Sofa|-02.08|+00.94|-03.62", "Sofa|-04.32|+01.73|-01.02"]},
     {user_defined_name: "Painting", objectIds: ["Painting|-05.08|+00.74|-03.22"]}
 ]
+
+Don't make up user-defined object names. Only map object identifiers to names that are given. Ignore the rest.
 """
 },
             {

@@ -38,7 +38,6 @@ class WrongObjectSuggested(Event):
     payload: str
     agent_info: tuple
 
-
 class RoomCorrect(Event):
     payload: str
     agent_info: tuple
@@ -204,7 +203,9 @@ class ThorFindsObject(Workflow):
         """
         # Log the current state or description of the room
         await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
+
         agent_info = ev.agent_info
+
 
 
         # Use the AI2ThorClient to search for the object
@@ -215,11 +216,13 @@ class ThorFindsObject(Workflow):
         logs=[]
         target = self.thor.clarified_structured_description.target_object.name
         context = [object.name for object in self.thor.clarified_structured_description.objects_in_context]
+
         obj_id, logs, agent_info = self.thor._attempt_to_find_and_go_to_target(target, context, logs, agent_info )
 
         # self.send_message(content=obj_id)
         for log in logs:
             await cl.Message(content=log).send()
+
         if obj_id:  
 
 
@@ -248,7 +251,9 @@ class ThorFindsObject(Workflow):
         ).send()      
         
         if object_found.get("value") == "yes":
+
             self.leolaniClient._save_scenario() 
+
             return StopEvent(result="We found the object!")  # End the workflow
         else:
             self.leolaniClient._save_scenario()
