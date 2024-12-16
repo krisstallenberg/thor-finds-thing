@@ -202,7 +202,7 @@ class ThorFindsObject(Workflow):
         - ObjectNotInRoom: If the object is not in the room.
         """
         # Log the current state or description of the room
-        await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
+        await self.send_message(content=f"Searching for the object in the identified room: {ev.payload}")
 
         agent_info = ev.agent_info
 
@@ -221,7 +221,7 @@ class ThorFindsObject(Workflow):
 
         # self.send_message(content=obj_id)
         for log in logs:
-            await cl.Message(content=log).send()
+            await self.send_message(content=log)
 
         if obj_id:  
 
