@@ -377,8 +377,8 @@ class AI2ThorClient:
         rooms = [obj for obj in self._controller.last_event.metadata["objects"] if obj["objectType"] == "Floor"]
         rooms.sort(key=lambda room: room['distance'])
         return rooms
-    
-    def find_nearest_reachable_position(self, destination) -> dict:
+
+    def _find_nearest_center_of_room(self):
         """
         Find a reachable position that is nearest to the given destination.
         
@@ -447,7 +447,9 @@ class AI2ThorClient:
         closest_reachable_position = find_closest_position(reachable_positions, center)
         return self._teleport(position=closest_reachable_position)
 
+
     def _describe_suggested_object(self, object_ID: str, turn_number, rotation, position):
+
         
         """
         Describes the suggested object to the user using an LLM-generated description.

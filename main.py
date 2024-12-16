@@ -122,7 +122,6 @@ class ThorFindsObject(Workflow):
         # Parse the structured description and generate a list of issues.
         issues = evaluate_initial_description(self.thor.structured_initial_description)
 
-        self.leolaniClient._save_scenario()
         if not issues:
             self.thor.clarified_structured_description = self.thor.structured_initial_description
             return InitialDescriptionComplete()    
@@ -167,18 +166,17 @@ class ThorFindsObject(Workflow):
             
             if self.chat_mode == "Developer":
                 await self.send_message(content=str(clarified_structured_description))
-            self.leolaniClient._save_scenario()
-            return InitialDescriptionComplete(payload="Description clarified.")
             
+            return InitialDescriptionComplete(payload="Description clarified.")    
         else:
             await self.send_message(content=f"Thank you! I noticed the description is still incomplete. I have stored your previous answers and I will ask some additional questions or repeat some to clarify your description.")
-            self.leolaniClient._save_scenario()
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
 
 
     @cl.step(type="llm", name="step to find a room of the correct type")
     @step
     async def find_correct_room_type(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> RoomCorrect | StopEvent:
+        
         target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
         # Teleport to the nearest unvisited center of a room.
@@ -205,18 +203,10 @@ class ThorFindsObject(Workflow):
         """
         # Log the current state or description of the room
         await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
-        agent_info = [0, None, None]
 
-        # Determine agent_info based on event type
-        if isinstance(ev, RoomCorrect):
-            agent_info = [0, None, None]
-            self.send_message(content=f'New room agent info is {agent_info}')
-        elif isinstance(ev, WrongObjectSuggested):  # Fixed typo
-            if hasattr(ev, 'agent_info'):  # Ensure ev has agent_info attribute
-                agent_info = ev.agent_info
-                self.send_message(content=f'It was a wrong object selected, the agent info is {agent_info}')
-            else:
-                self.send_message(content='Event does not contain agent_info. Using default.')
+        agent_info = ev.agent_info
+
+
 
         # Use the AI2ThorClient to search for the object
         if agent_info[0] == 3:
@@ -226,22 +216,20 @@ class ThorFindsObject(Workflow):
         logs=[]
         target = self.thor.clarified_structured_description.target_object.name
         context = [object.name for object in self.thor.clarified_structured_description.objects_in_context]
-        obj_id, logs, agent_info = self.thor._attempt_to_find_and_go_to_target(logs, target, context, agent_info )
 
-        self.send_message(content=obj_id)
+        obj_id, logs, agent_info = self.thor._attempt_to_find_and_go_to_target(target, context, logs, agent_info )
 
+        # self.send_message(content=obj_id)
         for log in logs:
-            self.send_message(content=log)
+            await cl.Message(content=log).send()
+
         if obj_id:  
 
-            for log in logs:
-                await cl.Message(content=log).send()
-            
+
             # Return the ObjectInRoom event
             return ObjectInRoom(object_id = obj_id, agent_info = agent_info)
         
         else:
-            self.leolaniClient._save_scenario()
             return ObjectNotInRoom(payload="Object is not in this room.")
     
     @cl.step(type="llm" , name="step to suggest an object")
@@ -263,7 +251,9 @@ class ThorFindsObject(Workflow):
         ).send()      
         
         if object_found.get("value") == "yes":
-            self.leolaniClient._save_scenario()
+
+            self.leolaniClient._save_scenario() 
+
             return StopEvent(result="We found the object!")  # End the workflow
         else:
             self.leolaniClient._save_scenario()
