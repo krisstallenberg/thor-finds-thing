@@ -38,9 +38,9 @@ class WrongObjectSuggested(Event):
     payload: str
     agent_info: tuple
 
-
 class RoomCorrect(Event):
     payload: str
+    agent_info: tuple
 
 class ObjectInRoom(Event):
     object_id: str
@@ -184,7 +184,7 @@ class ThorFindsObject(Workflow):
         # Teleport to the nearest unvisited center of a room.
         if await self.thor._teleport_to_nearest_new_room():
             self.leolaniClient._save_scenario()
-            return RoomCorrect(payload=f"Entering a new room.")
+            return RoomCorrect(payload=f"Entering a new room.", agent_info=(0, None, None))
         else:
             self.leolaniClient._save_scenario()
             return StopEvent(result="We've looked in every room, but we could find the object!")
