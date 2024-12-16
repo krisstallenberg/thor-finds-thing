@@ -377,8 +377,8 @@ class AI2ThorClient:
         rooms = [obj for obj in self._controller.last_event.metadata["objects"] if obj["objectType"] == "Floor"]
         rooms.sort(key=lambda room: room['distance'])
         return rooms
-    
-    def find_nearest_reachable_position(self, destination) -> dict:
+
+    def _find_nearest_center_of_room(self):
         """
         Find a reachable position that is nearest to the given destination.
         
