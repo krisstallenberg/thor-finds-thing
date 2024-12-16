@@ -118,6 +118,29 @@ class ThorFindsObject(Workflow):
 
         # Parse the user input and generate a structured description.
         self.thor.parse_unstructured_description(ev.initial_description)
+        
+        # Verify the target object.
+        target_object_correct = await cl.AskActionMessage( 
+            content=f"Alright, so the target object we're looking for is a {self.thor.structured_initial_description.target_object.name.lower()}, right?",
+            actions=[
+                cl.Action(name="Yes", value="yes", label="✅ Yes"),
+                cl.Action(name="No", value="no", label="❌ No"),
+            ],
+            timeout=INT_MAX
+        ).send()
+        
+        # If the target object was wrongly inferred from the initial description, ask the user to correct.
+        if target_object_correct == "no":
+            target_object = self.ask_user(content="What is the target object?")
+            
+            # Set everything but the name to Null. We clarify this later.
+            self.thor.structured_initial_description.target_object.name = target_object
+            self.thor.structured_initial_description.target_object.position = None
+            self.thor.structured_initial_description.target_object.size = None 
+            self.thor.structured_initial_description.target_object.texture = None
+            self.thor.structured_initial_description.target_object.material = None
+            self.thor.structured_initial_description.target_object.color = None 
+            self.thor.structured_initial_description.target_object.additional_information = []
 
         # Parse the structured description and generate a list of issues.
         issues = evaluate_initial_description(self.thor.structured_initial_description)
@@ -183,6 +206,7 @@ class ThorFindsObject(Workflow):
         if await self.thor._teleport_to_nearest_new_room():
             self.leolaniClient._save_scenario()
             return RoomCorrect(payload=f"Entering a new room.", agent_info=(0, None, None))
+        # If no teleport was possible (when all rooms have been visited), end the workflow.
         else:
             self.leolaniClient._save_scenario()
             return StopEvent(result="We've looked in every room, but we could find the object!")
@@ -248,7 +272,7 @@ class ThorFindsObject(Workflow):
                 cl.Action(name="No", value="no", label="❌ No"),
             ],
             timeout=INT_MAX
-        ).send()      
+        ).send()
         
         if object_found.get("value") == "yes":
 
