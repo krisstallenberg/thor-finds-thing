@@ -225,33 +225,26 @@ class ThorFindsObject(Workflow):
         - ObjectInRoom: If the object is found in the room.
         - ObjectNotInRoom: If the object is not in the room.
         """
-        # Log the current state or description of the room
-        await self.send_message(content=f"Searching for the object in the identified room: {ev.payload}")
 
         agent_info = ev.agent_info
-
-
 
         # Use the AI2ThorClient to search for the object
         if agent_info[0] == 3:
             self.leolaniClient._save_scenario()
             return ObjectNotInRoom(payload="The object could not be found in this room.")
 
-        logs=[]
         target = self.thor.clarified_structured_description.target_object.name
         context = [object.name for object in self.thor.clarified_structured_description.objects_in_context]
 
-        obj_id, logs, agent_info = self.thor._attempt_to_find_and_go_to_target(target, context, logs, agent_info )
+        found_object, agent_info = await self.thor._find_and_go_to_target(target, context, agent_info)
 
-        # self.send_message(content=obj_id)
-        for log in logs:
-            await self.send_message(content=log)
-
-        if obj_id:  
-
-
+        if found_object:  
+            # Log the image in Emissor
+            self.leolaniClient._add_image(found_object['name'], found_object['objectType'], found_object['position'], self.thor._get_image())
+            self.leolaniClient._save_scenario()
+            
             # Return the ObjectInRoom event
-            return ObjectInRoom(object_id = obj_id, agent_info = agent_info)
+            return ObjectInRoom(object_id = found_object['objectId'], agent_info = agent_info)
         
         else:
             return ObjectNotInRoom(payload="Object is not in this room.")
