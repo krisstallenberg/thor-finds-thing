@@ -12,7 +12,7 @@ import asyncio
 import random
 from AI2ThorClient import AI2ThorClient
 from descriptions import InitialDescription, ViewDescription
-from workflow_utils import evaluate_initial_description, generate_questions, populate_initial_description
+from workflow_utils import evaluate_initial_description, generate_clarifying_questions, update_structured_description
 from openai import OpenAI
 from llama_index.llms.openai import OpenAI as OpenAILlamaIndex
 from llama_index.llms.ollama import Ollama as OllamaLlamaIndex
@@ -118,6 +118,29 @@ class ThorFindsObject(Workflow):
 
         # Parse the user input and generate a structured description.
         self.thor.parse_unstructured_description(ev.initial_description)
+        
+        # Verify the target object.
+        target_object_correct = await cl.AskActionMessage( 
+            content=f"Alright, so the target object we're looking for is a {self.thor.structured_initial_description.target_object.name.lower()}, right?",
+            actions=[
+                cl.Action(name="Yes", value="yes", label="✅ Yes"),
+                cl.Action(name="No", value="no", label="❌ No"),
+            ],
+            timeout=INT_MAX
+        ).send()
+        
+        # If the target object was wrongly inferred from the initial description, ask the user to correct.
+        if target_object_correct == "no":
+            target_object = self.ask_user(content="What is the target object?")
+            
+            # Set everything but the name to Null. We clarify this later.
+            self.thor.structured_initial_description.target_object.name = target_object
+            self.thor.structured_initial_description.target_object.position = None
+            self.thor.structured_initial_description.target_object.size = None 
+            self.thor.structured_initial_description.target_object.texture = None
+            self.thor.structured_initial_description.target_object.material = None
+            self.thor.structured_initial_description.target_object.color = None 
+            self.thor.structured_initial_description.target_object.additional_information = []
 
         # Parse the structured description and generate a list of issues.
         issues = evaluate_initial_description(self.thor.structured_initial_description)
@@ -135,7 +158,7 @@ class ThorFindsObject(Workflow):
         await self.send_message(content="Before we move on, I want to ask a few more questions about what you saw. The description is incomplete because:\n- " + "\n- ".join([issue for issue, relates_to in ev.issues_with_description]) + "\n\n Once I've gathered this minimal information, let's move on to find the object.")
 
         # Generate clarifying questions from the list of issues.
-        questions = await generate_questions(issues=ev.issues_with_description, 
+        questions = await generate_clarifying_questions(issues=ev.issues_with_description, 
                                              openai_client=self.thor._llm_openai_multimodal, 
                                              structured_description=json.dumps(ev.structured_description, indent=4, default=str)
                                              )
@@ -151,7 +174,7 @@ class ThorFindsObject(Workflow):
             })
         
         # Populate the initial description using answers to the clarifying questions.
-        clarified_structured_description = populate_initial_description(structured_description=ev.structured_description,
+        clarified_structured_description = update_structured_description(structured_description=ev.structured_description,
                                      openai_client=self.thor._llm_openai_multimodal,
                                      unstructured_description=self.thor.initial_description,
                                      question_answer_pairs=clarifying_questions_answers)
@@ -182,6 +205,7 @@ class ThorFindsObject(Workflow):
         if await self.thor._teleport_to_nearest_new_room():
             self.leolaniClient._save_scenario()
             return RoomCorrect(payload=f"Entering a new room.", agent_info=(0, None, None))
+        # If no teleport was possible (when all rooms have been visited), end the workflow.
         else:
             self.leolaniClient._save_scenario()
             return StopEvent(result="We've looked in every room, but we could find the object!")
@@ -201,7 +225,7 @@ class ThorFindsObject(Workflow):
         - ObjectNotInRoom: If the object is not in the room.
         """
         # Log the current state or description of the room
-        await cl.Message(content=f"Searching for the object in the identified room: {ev.payload}").send()
+        await self.send_message(content=f"Searching for the object in the identified room: {ev.payload}")
 
         agent_info = ev.agent_info
 
@@ -220,7 +244,7 @@ class ThorFindsObject(Workflow):
 
         # self.send_message(content=obj_id)
         for log in logs:
-            await cl.Message(content=log).send()
+            await self.send_message(content=log)
 
         if obj_id:  
 
@@ -247,7 +271,7 @@ class ThorFindsObject(Workflow):
                 cl.Action(name="No", value="no", label="❌ No"),
             ],
             timeout=INT_MAX
-        ).send()      
+        ).send()
         
         if description_matches.get("value") == "yes":
             object_found = await cl.AskActionMessage( 

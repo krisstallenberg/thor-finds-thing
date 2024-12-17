@@ -31,8 +31,8 @@ def evaluate_initial_description(structured_description: InitialDescription) -> 
 
     # Check the context objects
     context_objects = structured_description.objects_in_context or []
-    if len(context_objects) < 4:
-        issues.append((f"There are only {len(context_objects)} context objects described. We would like a minimum of 4.", "objects_in_context"))
+    if len(context_objects) < 3:
+        issues.append((f"There are only {len(context_objects)} context objects described. We would like a minimum of 3.", "objects_in_context"))
     for i, obj in enumerate(context_objects, start=1):
         missing_context_attributes = []
         if not obj.position_relative_to_target_object:
@@ -61,7 +61,7 @@ def evaluate_initial_description(structured_description: InitialDescription) -> 
 
     return issues
 
-async def generate_questions(issues, openai_client, structured_description):
+async def generate_clarifying_questions(issues, openai_client, structured_description):
     """
     Takes a list of issues and returns questions to ask the user.
     
@@ -91,6 +91,13 @@ async def generate_questions(issues, openai_client, structured_description):
                             
                             Return a list of clarifying questions the system should ask to solve the issues in the description.
                             
+                            In your questions regarding size, don't ask for exact measurement. The user probably doesn't know exact dimensions. 
+                            Instead, ask either:
+                            
+                            - For 'T-shirt sizes' (small, medium, large) when it's an object that comes in different sizes, such as a painting. For example 'Was it a small, medium or large painting?'
+                            - Ask for object-specific sized, when it's an object that typically comes in a couple object-specific sizes. For example, 'Was it a one-person or two-person bed?'
+                            - Whether it differs from a 'normal' size, for objects that usually appear in one size. For example, 'Was it a normal-sized pen?'.
+                            
                             Here is the initial user description:
                             <Initial user description>
                             {structured_description}
@@ -106,7 +113,7 @@ async def generate_questions(issues, openai_client, structured_description):
     return response.choices[0].message.parsed.questions
 
 
-def populate_initial_description(
+def update_structured_description(
     structured_description: InitialDescription,
     openai_client,
     unstructured_description: str, 
@@ -130,11 +137,11 @@ def populate_initial_description(
             {
                 "role": "system",
                 "content": (
-                    "Your task is to populate a structured description of a view based on:"
+                    "Your task is to update a structured description of a view based on:"
                     " 1. An unstructured user description."
                     " 2. An incomplete structured description (InitialDescription format)."
                     " 3. Additional question-answer pairs to resolve missing information."
-                    "\n\nOnly use the information provided. Do not fabricate or assume any details."
+                    "\n\nWhen the question-answer pairs indicate a user doesn't know a detail, set the value to 'unspecified'. But when the answer is unclear but indicates the user may know the detail, omit the value."
                 ),
             },
             {"role": "user", "content": f"Unstructured Description: {unstructured_description}"},
