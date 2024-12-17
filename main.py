@@ -259,8 +259,11 @@ class ThorFindsObject(Workflow):
     @step 
     async def suggest_object(self, ev: ObjectInRoom ) ->  WrongObjectSuggested | StopEvent:
 
+        object_id = ev.object_id
+        agent_info = ev.agent_info
+
         # Describe suggested object from the image
-        description = self.thor.describe_suggested_object(obj_id=ev.obj_id, agent_info=ev.agent_info)
+        description, obj_id, ag_info = self.thor._describe_suggested_object(object_id, agent_info)
         
         self.send_message(content=f"Here's what I see: {description}")
         
@@ -275,7 +278,7 @@ class ThorFindsObject(Workflow):
         
         if description_matches.get("value") == "yes":
             object_found = await cl.AskActionMessage( 
-                content=f"Does the target object have identifier {ev.object_id}?",
+                content=f"Does the target object have identifier {obj_id}?",
                 actions=[
                     cl.Action(name="Yes", value="yes", label="✅ Yes"),
                     cl.Action(name="No", value="no", label="❌ No"),
@@ -288,7 +291,7 @@ class ThorFindsObject(Workflow):
                 return StopEvent(result="We found the object!")  # End the workflow
             else:
                 self.leolaniClient._save_scenario()
-                return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ev.agent_info) # Send back for new navigation
+                return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ag_info) # Send back for new navigation
                 
 
 @cl.on_chat_start
