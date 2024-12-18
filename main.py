@@ -258,7 +258,7 @@ class ThorFindsObject(Workflow):
         # Describe suggested object from the image
         description, obj_id, ag_info = self.thor._describe_suggested_object(object_id, agent_info)
         
-        self.send_message(content=f"Here's what I see: {description}")
+        await self.send_message(content=f"Here's what I see: {description}")
         
         description_matches = await cl.AskActionMessage( 
             content="Does the description match the object you're looking for?",
@@ -285,6 +285,8 @@ class ThorFindsObject(Workflow):
             else:
                 self.leolaniClient._save_scenario()
                 return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ag_info) # Send back for new navigation
+        else:
+            return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ag_info) # Send back for new navigation
                 
 
 @cl.on_chat_start
