@@ -199,8 +199,7 @@ class AI2ThorClient:
 
     def _get_image(self):
         image = Image.fromarray(self._controller.last_event.frame)
-        
-        # self.leolaniClient._add_image()
+
         if self._chat_mode == "Developer":
             self._workflow.send_message(content=image)
         
@@ -522,8 +521,7 @@ class AI2ThorClient:
         return turn_angle, detections_df, selected_objects
 
 
-
-    def _attempt_to_find_and_go_to_target(self, target_label: str, context_objects: list, logs: list, agent_info :tuple) -> tuple:
+    async def _find_and_go_to_target(self, target_label: str, context_objects: list, agent_info :tuple) -> tuple:
         """
         Attempt to locate the target object and move toward it.
         If the agent cannot step, teleport closer to the target.
@@ -531,7 +529,6 @@ class AI2ThorClient:
         Args:
             target_label (str): Name of the target object.
             context_objects (list): List of described object names.
-            logs (list): A list to collect log messages.
 
         Returns:
             bool: True if the target object is reached, False otherwise.
@@ -541,6 +538,9 @@ class AI2ThorClient:
         count_of_turns = agent_info[0]
         agent_rot=agent_info[2]
         agent_pos=agent_info[1]
+        
+        # Log the Action.Look in emissor
+        self.leolaniClient._add_action(Action.Look)
 
         if agent_rot != None or agent_pos != None:
 
@@ -550,14 +550,14 @@ class AI2ThorClient:
         # Initialize agent position and rotation
         agent_position = self._metadata[-1]['agent']['position']
         agent_rotation = self._metadata[-1]['agent']['rotation']
-        logs.append(f'Started looking for the {target_label} in the new room!')
+        await self._workflow.send_message(content=f"I'm going to look for the {target_label} in the room!")
         while (turn_angle is None or matched_object is None):
             image = self._get_image()  # Update the image after each rotation
             
             # Define target and described objects
             target_objects = {'target': target_label, 'context': context_objects}
             # Find the object using metadata
-            meta_best_match, meta_turn_angle = self._find_target_angle_and_id_with_meta(target_objects['target'])
+            meta_best_match, meta_turn_angle = await self._find_target_angle_and_id_with_meta(target_objects['target'])
 
             # Run the workflow to find objects and calculate turn angles
             turn_angle, detections_df, objects_selected = self._find_objects_and_angles(
@@ -566,56 +566,55 @@ class AI2ThorClient:
             )
             visible_objects = self._find_objects_in_sight(object_type=None)
 
-            matched_object, logs = self._select_objects_by_similarity(logs, target_label, visible_objects)
+            matched_object = await self._select_objects_by_similarity(target_label, visible_objects)
             if matched_object!= None and turn_angle != None:
-                logs.append(f'Found a possible object! Trying now to approach it.')
+                await self._workflow.send_message(content=f"I found a possible object! I'm going to approach it.")
 
             
             if turn_angle is None and meta_turn_angle is not None:
                 turn_angle = meta_turn_angle
                 matched_object = meta_best_match
-                logs.append(f'Did not find the object through camera, but found one through the Metadata.')
+                await self._workflow.send_message(content="I couldn't see the object in the image, but I found it in the metadata!")
 
             
             for item in self._objects_seen.values():  # Iterate over the dictionary values
 
-                if matched_object is not None and item['objectId'] == matched_object['id']:
+                if matched_object is not None and item['objectId'] == matched_object['objectId']:
                     if item['visited'] == 1:
                         turn_angle = None
                         matched_object = None
-                        print('already seen the object')
-                        logs.append(f'The object that was found has already been found before. Continueing the search!')
+                        await self._workflow.send_message(content=f"Oh, I saw this object before. Let's continue the search!")
+                        
 
             if turn_angle is None and meta_turn_angle is None and matched_object != None:
                 for item in self._objects_seen.values():
-                    if item['objectId'] == matched_object['id']:
+                    if item['objectId'] == matched_object['objectId']:
                         item['visited'] = 1
-                logs.append('The navigation to the found object could not be calculated, but the object ID is known!')
-                return matched_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
+                await self._workflow.send_message(content="I see an object, but I don't know how to go there...")
+                return matched_object, (count_of_turns, agent_position, agent_rotation)
                         
             if not turn_angle or not matched_object:
                 self._rotate(direction='RotateLeft')  # Rotate to search for objects
                 agent_position = self._metadata[-1]['agent']['position']
                 agent_rotation = self._metadata[-1]['agent']['rotation']
-                logs.append(f"Rotated left to search for '{target_label}'.")
+                await self._workflow.send_message(content=f"I rotated left to search for the '{target_label}'.")
                 count_of_turns += 1
 
             if count_of_turns >= 3:
-                logs.append(f"Target '{target_label}' not found after 3 rotations.")
-                return False, logs, (count_of_turns, agent_position, agent_rotation)
+                await self._workflow.send_message(content=f"I couldn't find the '{target_label}' after making a full turn...")
+                return False, (count_of_turns, agent_position, agent_rotation)
     
 
-
-        logs.append(f"Matched target '{target_label}' to object: {matched_object}.")
+        await self._workflow.send_message(content=f"I was looking for the {target_label}, and I found a/an {matched_object['objectType']}.")
         selected_object = matched_object
 
         # Rotate to align with the selected object
         if turn_angle > 0:
             self._rotate(direction='RotateRight', degrees=abs(turn_angle))
-            logs.append(f"Rotated right by {abs(turn_angle)} degrees to align with the target.")
+            await self._workflow.send_message(content=f"I rotated right by {round(abs(turn_angle), 1)} degrees to face the {selected_object['objectType']}.")
         else:
             self._rotate(direction='RotateLeft', degrees=abs(turn_angle))
-            logs.append(f"Rotated left by {abs(turn_angle)} degrees to align with the target.")
+            await self._workflow.send_message(content=f"I rotated left by {round(abs(turn_angle), 1)} degrees to face the {selected_object['objectType']}.")
 
         # Step toward the target object
         max_teleports = 10  # Prevent infinite retries
@@ -629,75 +628,75 @@ class AI2ThorClient:
                 target_position = selected_object["position"]
 
                 distance = get_distance(agent_position, target_position)
-                print(f'{distance}, distance')
 
                 if distance <= 1.5:
-                    logs.append(f"Target '{target_label}' is within {distance:.2f} meters. Successfully reached.")
+                    await self._workflow.send_message(content=f"I'm standing {distance:.2f} meters from the {selected_object['objectType']}.")
                     for item in self._objects_seen.values():
-                        if item['objectId'] == selected_object['id']:
+                        if item['objectId'] == selected_object['objectId']:
                             item['visited'] = 1
-                    return selected_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
+                    return selected_object, (count_of_turns, agent_position, agent_rotation)
 
                 self._step('MoveAhead')
-                logs.append('Stepped forward.')
+                
                 step_count += 1
 
                 if not self._metadata[-1]['lastActionSuccess']:
-                    logs.append("Step failed. Calculating closest teleportable position.")
+                    await self._workflow.send_message(content="I tried to step forward, but I couldn't. I'm going to jump over an object...")
                     break
+                else:
+                    await self._workflow.send_message(content=f'I stepped forward...')
 
             teleport_position = self._calculate_closest_teleportable_position(agent_position, target_position)
             if teleport_position is None:
-                logs.append("No suitable teleportable position found.")
+                await self._workflow.send_message(content="Whoops... I can't jump over this object.")
                 for item in self._objects_seen.values():
-                    if item['objectId'] == selected_object['id']:
+                    if item['objectId'] == selected_object['objectId']:
                         item['visited'] = 1
-                return selected_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
+                return selected_object, (count_of_turns, agent_position, agent_rotation)
 
             self._teleport(position=teleport_position)
             teleport_count += 1
-            logs.append(f"Teleported to {teleport_position}. Resuming movement.")
+            await self._workflow.send_message(content=f"I jumped over the object!")
 
-        logs.append("Max teleports reached. Could not reach the target.")
+        await self._workflow.send_message(content="I tried to jump over the object, but I couldn't...")
         for item in self._objects_seen.values():
-            if item['objectId'] == selected_object['id']:
+            if item['objectId'] == selected_object['objectId']:
                 item['visited'] = 1
-        return selected_object['id'], logs, (count_of_turns, agent_position, agent_rotation)
+        return selected_object, (count_of_turns, agent_position, agent_rotation)
 
 
 
-    def _select_objects_by_similarity(self, logs, target_label: str, visible_objects: list, similarity_threshold=0.40) -> list:
+    async def _select_objects_by_similarity(self, target_label: str, visible_objects: list, similarity_threshold=0.40) -> list:
         """
         Select the best matching visible object for the target label based on semantic similarity using embeddings.
     
         Args:
-            logs (list): Log messages.
             target_label (str): The target label to match.
             visible_objects (list): List of visible objects, each as a dictionary with 'objectType' and other properties.
             similarity_threshold (float): The minimum cosine similarity required to consider a match.
     
         Returns:
-            tuple: (Best match object or None, Updated logs)
+            best_match: dict or None
+                Object dict that best matches the target label
         """
         try:
             # Step 1: Extract object types and metadata from visible objects
             object_data = [
-                {"id": obj["objectId"], "type": obj["objectType"], "position": obj["position"]}
+                {"objectId": obj["objectId"], "objectType": obj["objectType"], "position": obj["position"], "name": obj["name"]}
                 for obj in visible_objects
             ]
-            object_types = [obj["type"] for obj in object_data]
+            object_types = [obj["objectType"] for obj in object_data]
     
             if not object_types:
-                logs.append("No object types found in visible objects.")
-                return None, logs
+                await self._workflow.send_message(content="I can't see any objects in the metadata...")
+                return None
     
             # Step 2: Encode target label and object types
             target_embedding = self._similarity_model.encode([target_label])
             object_embeddings = self._similarity_model.encode(object_types)
     
             if target_embedding.size == 0 or len(object_embeddings) == 0:
-                logs.append("Embeddings for target or objects are missing or invalid.")
-                return None, logs
+                return None
     
             # Step 3: Compute cosine similarity between target label and object types
             similarities = cosine_similarity(target_embedding, object_embeddings).flatten()
@@ -707,17 +706,17 @@ class AI2ThorClient:
             best_similarity = similarities[best_match_index]
     
             if best_similarity < similarity_threshold:
-                logs.append(f"No object matches the target label '{target_label}' with sufficient similarity (Threshold: {similarity_threshold}).")
-                return None, logs
+                await self._workflow.send_message(content=f"I don't see an object that is similar to '{target_label}' in the metadata. The most similar object has a similarity of {best_similarity:.2f}...")
+                return None
     
             # Step 5: Return the best match object metadata
             best_match_object = object_data[best_match_index]
-            logs.append(f"Best match for '{target_label}' is '{best_match_object['type']}' with similarity {best_similarity:.2f}.")
-            return best_match_object, logs
+            await self._workflow.send_message(content=f"I'm looking for the {target_label}, and I found a/an '{best_match_object['objectType']}'! The similarity score is {best_similarity:.2f}.")
+            return best_match_object
     
         except Exception as e:
-            logs.append(f"Error during object similarity computation: {e}")
-            return None, logs
+            await self._workflow.send_message(content=f"Error during object similarity computation: {e}")
+            return None
 
     
     def _calculate_relative_position(self, agent_position: dict, agent_rotation: dict, object_position: dict) -> dict:
@@ -914,7 +913,7 @@ class AI2ThorClient:
 
 
     
-    def _find_target_angle_and_id_with_meta(self, target_name):
+    async def _find_target_angle_and_id_with_meta(self, target_name):
         """
         Finds the best-matching object based on semantic similarity and calculates the turn angle.
     
@@ -936,12 +935,9 @@ class AI2ThorClient:
     
         # Step 3: Filter visible objects to those whose IDs match receptacle IDs
         filtered_objects = [obj for obj in visible_objects if obj['objectId'] in receptacle_ids]
-        logs=[]
 
+        best_match = await self._select_objects_by_similarity(target_name, filtered_objects)
 
-        best_match, logs = self._select_objects_by_similarity( logs, target_name, filtered_objects)
-
-    
         if not best_match:
             return None, None
     
@@ -951,8 +947,6 @@ class AI2ThorClient:
         # Step 5: Get agent's position and rotation 
         agent_position = self._metadata[-1]['agent']['position'] 
         agent_rotation = self._metadata[-1]['agent']['rotation']  
-        print(agent_position)
-        print(agent_rotation)
         # Step 6: Calculate turn angle and distance 
         turn_angle, _ = calculate_turn_and_distance_dot_product(
             (agent_position['x'], agent_position['z']),  # Use x and z for 2D position
