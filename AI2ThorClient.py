@@ -461,6 +461,14 @@ class AI2ThorClient:
             str
             A string describing the suggested object.
         """
+        name = self.clarified_structured_description.target_object.name
+        position = self.clarified_structured_description.target_object.position
+        size = self.clarified_structured_description.target_object.size
+        color = self.clarified_structured_description.target_object.color
+        texture = self.clarified_structured_description.target_object.texture
+        material = self.clarified_structured_description.target_object.material
+
+        target_obj_list = [name, position, size, color, texture, material]
 
         encoded_image = encode_image(self._get_image())
         object_type = object_ID.split('|')[0]
@@ -473,7 +481,9 @@ class AI2ThorClient:
                 "content": [
                     {
                         "type": "text",
-                        "text": f"Describe the {object_type.lower()} as if you are observing it closely for the first time. Start by introducing the {object_type.lower()} and its position in the setting, such as 'I have found a painting hanging on the wall to the left of a door,' or use a similar statement to set the scene. Continue by describing its size, texture, material, and color in detail. Highlight any distinctive features, like patterns or decorations. Be precise and thorough in your description.",
+                        "text": 
+                            #[f"Describe the {object_type.lower()} as if you are observing it closely for the first time. Start by introducing the {object_type.lower()} and its position in the setting, such as 'I have found a painting hanging on the wall to the left of a door,' or use a similar statement to set the scene. Continue by describing its size, texture, material, and color in detail. Highlight any distinctive features, like patterns or decorations. Be precise and thorough in your description.",
+                        f"You are tasked to clarify whether the {object_type.lower()} that you see is similar to a different {name.lower()}, based on stored attributes in this list {target_obj_list}. Iterate through all items and motivate whether the attribute is true to the current {object_type.lower()} that you see. Format your response in this way: 'name of the attribute:  your motivation whether it matches or not'"
                         },
                     {
                         "type": "image_url",
@@ -486,6 +496,8 @@ class AI2ThorClient:
             ],
         )
         return response.choices[0].message.content, object_ID, agent_info
+    
+    
 
     def _done(self) -> None:
         """
