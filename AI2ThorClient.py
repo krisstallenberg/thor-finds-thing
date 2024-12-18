@@ -446,7 +446,7 @@ class AI2ThorClient:
         closest_reachable_position = find_closest_position(reachable_positions, center)
         return self._teleport(position=closest_reachable_position)
 
-    def _describe_suggested_object(self, object_ID: str, agent_info):
+    async def _describe_suggested_object(self, object_ID: str, agent_info):
         
         """
         Describes the suggested object to the user using an LLM-generated description.
@@ -467,11 +467,55 @@ class AI2ThorClient:
         color = self.clarified_structured_description.target_object.color
         texture = self.clarified_structured_description.target_object.texture
         material = self.clarified_structured_description.target_object.material
+        additional_info = self.clarified_structured_description.target_object.additional_information 
+        
+        context_objects = [obj for obj in self.clarified_structured_description.objects_in_context]
 
         target_obj_list = [name, position, size, color, texture, material]
 
         encoded_image = encode_image(self._get_image())
         object_type = object_ID.split('|')[0]
+        
+        prompt = f"You are tasked to clarify whether the {object_type.lower()} that you see is similar to a different {name.lower()}, based on stored attributes in this list {target_obj_list}. Iterate through all items and motivate whether the attribute is true to the current {object_type.lower()} that you see. Format your response in this way: 'name of the attribute:  your motivation whether it matches or not'"
+        prompt = f"""
+Your job is to help me decide whether the {object_type.lower()} you see matches the {name.lower()} that I am looking for. 
+
+The {name.lower()} I am looking for has the following attributes:
+
+<Target object description>
+- Position: {position}
+- Size: {size}
+- Color: {color}
+- Texture: {texture}
+- Material: {material}
+- Additional information: {additional_info}
+
+(When an attribute is missing, you can ignore it.)
+</Target object description>
+
+I saw the following objects around the {name.lower()}:
+
+<Context objects description>
+{context_objects}
+</Context objects description>
+
+<Your task>
+
+First, describe the {object_type.lower()} you see based on its visible features. Don't write this part in the form of a list, but just natural sentences, and write as if the image is your point-of-view. Imagine the image is your point-of-view. Start this part with "I see...". Try to be as descriptive as you can be here. If the object is not fully visible, base your description on what you can see. Avoid statements like "I can't fully see the object." 
+
+Next, describe the objects you see surrounding the {object_type.lower()}.
+
+Next, compare each attribute of the described {name.lower()} with the {object_type.lower()} you see. Clearly state whether each attribute matches or not, using this format for each attribute:
+- Attribute name: [your assessment, e.g., "Matches" or "Does not match"] – Explanation: [brief reasoning]
+
+Finally, compare the objects you see around the {object_type.lower()} with the context objects the user describes. Take into account that our perspectives in the room may be different. So when you saw a context object is 'in front of the {name.lower()}' try to be agnostic to your point-of-view and try to describe the context object in the space, relative to the object. For example, a vase may be standing to the right of the right armwrest of a couch. Such a description is point-of-view agnostic.
+
+Your response should help a user determine whether the object you see matches the object they see.
+
+<Your task>
+"""
+
+        await self._workflow.send_message(prompt)
         
         response = self._llm_openai_multimodal.chat.completions.create(
         model="gpt-4o",
@@ -481,9 +525,7 @@ class AI2ThorClient:
                 "content": [
                     {
                         "type": "text",
-                        "text": 
-                            #[f"Describe the {object_type.lower()} as if you are observing it closely for the first time. Start by introducing the {object_type.lower()} and its position in the setting, such as 'I have found a painting hanging on the wall to the left of a door,' or use a similar statement to set the scene. Continue by describing its size, texture, material, and color in detail. Highlight any distinctive features, like patterns or decorations. Be precise and thorough in your description.",
-                        f"You are tasked to clarify whether the {object_type.lower()} that you see is similar to a different {name.lower()}, based on stored attributes in this list {target_obj_list}. Iterate through all items and motivate whether the attribute is true to the current {object_type.lower()} that you see. Format your response in this way: 'name of the attribute:  your motivation whether it matches or not'"
+                        "text": prompt
                         },
                     {
                         "type": "image_url",

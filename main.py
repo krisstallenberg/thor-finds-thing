@@ -256,9 +256,9 @@ class ThorFindsObject(Workflow):
         agent_info = ev.agent_info
 
         # Describe suggested object from the image
-        description, obj_id, ag_info = self.thor._describe_suggested_object(object_id, agent_info)
+        description, obj_id, ag_info = await self.thor._describe_suggested_object(object_id, agent_info)
         
-        await self.send_message(content=f"Here's what I see: {description}")
+        await self.send_message(content=description)
         
         description_matches = await cl.AskActionMessage( 
             content="Does the description match the object you're looking for?",
