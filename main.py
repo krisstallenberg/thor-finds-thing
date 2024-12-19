@@ -145,6 +145,9 @@ class ThorFindsObject(Workflow):
         # Parse the structured description and generate a list of issues.
         issues = evaluate_initial_description(self.thor.structured_initial_description)
 
+        # Store emissor log to file
+        self.leolaniClient._save_scenario()
+        
         if not issues:
             self.thor.clarified_structured_description = self.thor.structured_initial_description
             return InitialDescriptionComplete()    
@@ -182,7 +185,9 @@ class ThorFindsObject(Workflow):
         # Check if the description is complete after clarifying questions were asked.
         issues = evaluate_initial_description(clarified_structured_description)
 
+        # Store emissor log to file
         self.leolaniClient._save_scenario()
+        
         if not issues:
             self.thor.clarified_structured_description = clarified_structured_description
             await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
