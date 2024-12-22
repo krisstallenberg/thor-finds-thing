@@ -38,7 +38,7 @@ class WrongObjectSuggested(Event):
     payload: str
     agent_info: tuple
 
-class RoomCorrect(Event):
+class NewRoom(Event):
     payload: str
     agent_info: tuple
 
@@ -190,26 +190,22 @@ class ThorFindsObject(Workflow):
         
         if not issues:
             self.thor.clarified_structured_description = clarified_structured_description
-            await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")
-            
-            if self.chat_mode == "Developer":
-                await self.send_message(content=str(clarified_structured_description))
-            
+            await self.send_message(content=f"Thank you! You answers have given me a better understanding of what to look for.")      
             return InitialDescriptionComplete(payload="Description clarified.")    
         else:
             await self.send_message(content=f"Thank you! I noticed the description is still incomplete. I have stored your previous answers and I will ask some additional questions or repeat some to clarify your description.")
             return InitialDescriptionIncomplete(issues_with_description=issues, structured_description=clarified_structured_description)
 
-    @cl.step(type="llm", name="step to find a room of the correct type")
+    @cl.step(type="llm", name="step to go to a new room")
     @step
-    async def find_correct_room_type(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> RoomCorrect | StopEvent:
+    async def go_to_new_room(self, ev: InitialDescriptionComplete | ObjectNotInRoom) -> NewRoom | StopEvent:
         
         target_room_types = ", or ".join(self.thor.clarified_structured_description.room_description.possible_room_types)
         
         # Teleport to the nearest unvisited center of a room.
         if await self.thor._teleport_to_nearest_new_room():
             self.leolaniClient._save_scenario()
-            return RoomCorrect(payload=f"Entering a new room.", agent_info=(0, None, None))
+            return NewRoom(payload=f"Entering a new room.", agent_info=(0, None, None))
         # If no teleport was possible (when all rooms have been visited), end the workflow.
         else:
             self.leolaniClient._save_scenario()
@@ -217,7 +213,7 @@ class ThorFindsObject(Workflow):
 
     @cl.step(type="llm", name="step to find the object in the current room")
     @step 
-    async def find_object_in_room(self, ev: RoomCorrect | WrongObjectSuggested) -> ObjectInRoom | ObjectNotInRoom:
+    async def find_object_in_room(self, ev: NewRoom | WrongObjectSuggested) -> ObjectInRoom | ObjectNotInRoom:
 
         """
         Attempts to locate the object in the room.
@@ -266,7 +262,7 @@ class ThorFindsObject(Workflow):
         await self.send_message(content=description)
         
         description_matches = await cl.AskActionMessage( 
-            content="Does the description match the object you're looking for?",
+            content="Does this sound like the object you're looking for?",
             actions=[
                 cl.Action(name="Yes", value="yes", label="✅ Yes"),
                 cl.Action(name="No", value="no", label="❌ No"),
@@ -292,7 +288,7 @@ class ThorFindsObject(Workflow):
                 return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ag_info) # Send back for new navigation
         else:
             return WrongObjectSuggested(payload="Couldn't find object in this room.", agent_info=ag_info) # Send back for new navigation
-                
+
 
 @cl.on_chat_start
 async def on_chat_start():
